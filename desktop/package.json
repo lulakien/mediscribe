@@ -1,0 +1,36 @@
+{
+  "name": "mediscribe-desktop",
+  "version": "1.0.0",
+  "description": "MediScribe Desktop - Local-first medical lecture transcription",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "electron"
+  ],
+  "scripts": {
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron": "cd electron && npm run build",
+    "build:backend": "echo 'Backend uses Python - no build step needed'",
+    "build:all": "npm run build:frontend && npm run build:electron && npm run build:backend",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:electron": "cd electron && npm run watch",
+    "start": "cd electron && npm start",
+    "package": "npm run build:all && cd electron && npm run package",
+    "clean": "rm -rf frontend/dist electron/dist electron/dist-packaged",
+    "postinstall": "cd frontend && npm install && cd ../electron && npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/mediscribe.git"
+  },
+  "keywords": [
+    "transcription",
+    "medical",
+    "whisper",
+    "electron",
+    "desktop",
+    "local-first"
+  ],
+  "author": "",
+  "license": "MIT"
+}

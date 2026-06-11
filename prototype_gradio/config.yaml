@@ -1,0 +1,26 @@
+backend: local_whisper
+
+backends:
+  local_whisper:
+    model_name: large-v3
+    device: auto
+    compute_type: auto
+    language: tr
+    beam_size: 5
+    vad_filter: true
+    condition_on_previous_text: false
+    temperature: 0
+    initial_prompt: >
+      Bu kayıt Türkçe bir tıp dersi kaydıdır. Tıbbi terimleri, anatomi,
+      fizyoloji, patoloji, farmakoloji, biyokimya, histoloji, embriyoloji
+      ve klinik ifadeleri mümkün olduğunca doğru yaz. Latince anatomik
+      terimleri koru. Kısaltmaları doğru aktar. Konuşma Türkçedir;
+      gereksiz İngilizce çeviri yapma.
+
+  api_gateway:
+    enabled: false
+    provider: null
+    endpoint_url: null
+    api_key_env_var: null
+    model_name: null
+    timeout_seconds: 600

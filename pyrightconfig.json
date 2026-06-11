@@ -1,0 +1,12 @@
+{
+  "venvPath": "desktop/backend",
+  "venv": ".venv",
+  "extraPaths": [
+    "shared",
+    "desktop/backend"
+  ],
+  "include": [
+    "desktop/backend",
+    "shared"
+  ]
+}

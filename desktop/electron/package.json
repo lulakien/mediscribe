@@ -1,0 +1,101 @@
+{
+  "name": "mediscribe-electron",
+  "version": "1.0.0",
+  "description": "MediScribe Desktop - Electron main process",
+  "homepage": "https://github.com/yourusername/mediscribe",
+  "author": "MediScribe Contributors <maintainers@mediscribe.local>",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "electron .",
+    "package": "electron-builder",
+    "package:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.0",
+    "typescript": "^5.3.0"
+  },
+  "build": {
+    "appId": "com.mediscribe.desktop",
+    "productName": "MediScribe",
+    "directories": {
+      "output": "dist-packaged",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__",
+          "!**/*.pyc",
+          "!**/venv/**",
+          "!**/test_*.py",
+          "!**/*_test.py",
+          "!**/tests/**",
+          "!**/.pytest_cache",
+          "!**/IMPLEMENTATION_SUMMARY.md",
+          "!**/MODEL_MANAGER_README.md"
+        ]
+      },
+      {
+        "from": "../../shared",
+        "to": "shared",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend",
+        "filter": ["**/*"]
+      }
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Office;AudioVideo;Utility",
+      "desktop": {
+        "Name": "MediScribe",
+        "Comment": "Local-first medical lecture transcription",
+        "GenericName": "Audio Transcription",
+        "Keywords": "transcription;audio;medical;whisper;AI"
+      },
+      "maintainer": "MediScribe Contributors <maintainers@mediscribe.local>",
+      "executableName": "mediscribe",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "synopsis": "Local-first transcription studio for Turkish medical lectures",
+      "description": "MediScribe Local transcribes medical lectures on your machine using Whisper AI. Private, GPU-accelerated, and study-ready outputs."
+    },
+    "appImage": {
+      "license": "../LICENSE"
+    },
+    "deb": {
+      "depends": [
+        "ffmpeg"
+      ],
+      "priority": "optional",
+      "afterInstall": "build/after-install.sh",
+      "afterRemove": "build/after-remove.sh"
+    },
+    "compression": "normal",
+    "asar": true,
+    "asarUnpack": [
+      "resources/backend/**/*"
+    ]
+  }
+}

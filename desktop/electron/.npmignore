@@ -1,0 +1,19 @@
+# Source files (only ship compiled JS)
+src/
+*.ts
+!*.d.ts
+tsconfig.json
+
+# Development
+node_modules/
+.vscode/
+.idea/
+
+# Build artifacts (shipped separately)
+dist-packaged/
+
+# Tests and docs
+*.test.js
+*.spec.js
+test/
+tests/

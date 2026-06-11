@@ -1,0 +1,233 @@
+/* Font imports - bundled locally via @fontsource */
+@import "@fontsource/fraunces/latin-ext.css";
+@import "@fontsource/fraunces/latin-ext-500.css";
+@import "@fontsource/fraunces/latin-ext-600.css";
+@import "@fontsource/albert-sans/latin-ext.css";
+@import "@fontsource/albert-sans/latin-ext-400.css";
+@import "@fontsource/albert-sans/latin-ext-500.css";
+@import "@fontsource/albert-sans/latin-ext-600.css";
+@import "@fontsource/ibm-plex-mono/latin-ext.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-400.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-500.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Neutrals / Surfaces */
+    --bg: 42 33% 89%; /* #F4EFE4 */
+    --surface: 40 67% 97%; /* #FFF9EE */
+    --surface-2: 40 33% 85%; /* #E8DDC8 */
+    --border: 40 29% 75%; /* #D8C7A6 */
+    --border-strong: 40 24% 65%; /* #C4AE85 */
+
+    /* Text */
+    --text: 30 14% 9%; /* #171511 */
+    --text-muted: 36 10% 32%; /* #5C5547 */
+    --text-faint: 36 8% 50%; /* #8A8170 */
+
+    /* Brand / Accents */
+    --primary: 17 63% 44%; /* #B65A2A */
+    --primary-hover: 17 65% 37%; /* #9E4C21 */
+    --primary-soft: 17 65% 89%; /* #F3DECF */
+    --wood: 30 40% 30%; /* #6B4A2D */
+    --olive: 73 26% 42%; /* #7A8450 */
+    --olive-soft: 73 20% 89%; /* #E7E9D8 */
+
+    /* Semantic States */
+    --success: 100 23% 41%; /* #5E7D4F */
+    --success-soft: 100 20% 89%; /* #E4EAD9 */
+    --warning: 40 59% 44%; /* #B07D2E */
+    --warning-soft: 40 70% 88%; /* #F3E6C9 */
+    --error: 9 50% 37%; /* #8E3B2F */
+    --error-soft: 9 50% 89%; /* #F0DCD6 */
+    --info: 36 15% 33%; /* #6B6049 */
+  }
+
+  /* Dark theme "Study Night" - optional, defined for future use */
+  .dark {
+    --bg: 30 18% 10%; /* #201B14 */
+    --surface: 30 18% 13%; /* #2A241B */
+    --border: 30 18% 22%; /* #473D2E */
+    --border-strong: 30 18% 32%; /* #5C5042 */
+
+    --text: 40 50% 93%; /* #F0E9DA */
+    --text-muted: 40 20% 65%; /* #B5AA93 */
+    --text-faint: 40 15% 50%; /* #8A8170 */
+
+    --primary: 17 63% 51%; /* #C96A38 */
+    --primary-hover: 17 63% 44%; /* #B65A2A */
+    --primary-soft: 17 40% 20%; /* #4D3324 */
+    --wood: 30 40% 45%; /* #9A7A52 */
+    --olive: 73 26% 52%; /* #97A668 */
+    --olive-soft: 73 15% 25%; /* #3D4233 */
+
+    --success: 100 23% 51%; /* #77996A */
+    --success-soft: 100 15% 20%; /* #2F3B2B */
+    --warning: 40 59% 54%; /* #D19A4A */
+    --warning-soft: 40 40% 22%; /* #4D3F28 */
+    --error: 9 50% 47%; /* #B14D3F */
+    --error-soft: 9 30% 20%; /* #422D28 */
+    --info: 36 15% 50%; /* #8A8170 */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-bg text-text font-sans text-body;
+    font-feature-settings: "kern" 1, "liga" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Typography base styles */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display;
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Focus ring utility */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+  }
+
+  /* Card base */
+  .card {
+    @apply bg-surface border border-border rounded-card shadow-card;
+  }
+
+  .card-interactive {
+    @apply card transition-all duration-micro hover:border-border-strong hover:shadow-card-hover hover:-translate-y-px;
+  }
+
+  .card-selected {
+    @apply card border-[1.5px] border-primary bg-primary-soft/40;
+  }
+
+  .card-soft {
+    @apply bg-surface-2 rounded-card;
+  }
+
+  /* Button base styles */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-button h-10 px-4 text-body font-medium transition-all duration-micro focus-ring disabled:opacity-45 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-surface hover:bg-primary-hover;
+  }
+
+  .btn-secondary {
+    @apply btn bg-transparent border border-border-strong text-text hover:bg-surface-2;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-text-muted hover:bg-surface-2;
+  }
+
+  .btn-danger {
+    @apply btn bg-transparent border border-error text-error hover:bg-error-soft;
+  }
+
+  .btn-icon {
+    @apply w-8 h-8 rounded-button flex items-center justify-center text-text-muted hover:bg-surface-2 transition-all duration-micro focus-ring;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-pill text-small font-semibold tracking-[0.06em];
+  }
+
+  .badge-success {
+    @apply badge bg-success-soft text-success;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning-soft text-warning;
+  }
+
+  .badge-error {
+    @apply badge bg-error-soft text-error;
+  }
+
+  .badge-info {
+    @apply badge bg-surface-2 text-info;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-soft text-primary;
+  }
+
+  /* Progress bar */
+  .progress-track {
+    @apply w-full h-1.5 bg-surface-2 rounded-full overflow-hidden;
+  }
+
+  .progress-fill {
+    @apply h-full bg-primary transition-all duration-normal ease-out;
+  }
+
+  /* Transcript preview well */
+  .transcript-preview {
+    @apply bg-surface p-card-padding rounded-card font-sans text-body leading-relaxed max-w-reading mx-auto;
+  }
+
+  /* Small caps label style */
+  .label-small-caps {
+    @apply text-small font-semibold tracking-[0.06em] text-text-muted uppercase;
+  }
+
+  /* Mono path/code style */
+  .mono-path {
+    @apply font-mono text-mono-small text-text-muted;
+  }
+}
+
+@layer utilities {
+  /* Scrollbar styling for webkit browsers */
+  .scrollbar-styled {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border') theme('colors.surface-2');
+  }
+
+  .scrollbar-styled::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-styled::-webkit-scrollbar-track {
+    background: theme('colors.surface-2');
+    border-radius: theme('borderRadius.pill');
+  }
+
+  .scrollbar-styled::-webkit-scrollbar-thumb {
+    background: theme('colors.border');
+    border-radius: theme('borderRadius.pill');
+  }
+
+  .scrollbar-styled::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.border-strong');
+  }
+}
