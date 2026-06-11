@@ -50,6 +50,23 @@ class ApiClient {
     return response.json();
   }
 
+  async getStream(path: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+    await this.initialize();
+
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal,
+    });
+
+    if (!response.ok || !response.body) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.body;
+  }
+
   async post<T>(path: string, data?: unknown): Promise<T> {
     await this.initialize();
 

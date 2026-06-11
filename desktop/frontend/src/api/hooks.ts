@@ -1,10 +1,14 @@
 // TanStack Query hooks for API operations
 
+import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from '@tanstack/react-query';
 import { apiClient } from './client';
+import { useWebSocket } from './websocket';
 import type {
   Job,
   Model,
+  ProgressEvent,
+  RunMetrics,
   TranscriptionResult,
   TranscriptionOptions,
   Config,
@@ -39,6 +43,18 @@ interface BackendJob {
   normalize_audio?: boolean;
   overwrite?: boolean;
   dry_run?: boolean;
+  cancel_requested?: boolean;
+  last_progress_event?: {
+    message?: string;
+    current_file?: string;
+    status_rows?: Array<Record<string, unknown>>;
+    metrics?: RunMetrics;
+    model_status?: string;
+    log_tail?: string;
+    progress?: number;
+    state?: string;
+    cancel_requested?: boolean;
+  } | null;
   options: TranscriptionOptions & {
     model_name?: string;
     model_id?: string;
@@ -62,23 +78,30 @@ const toJob = (job: BackendJob): Job => {
       ? 'pending'
       : job.state === 'running'
       ? 'processing'
-      : job.state === 'cancelled'
-      ? 'failed'
       : job.state;
+  const outputRow = job.status_rows?.find((row) => String(row.status) === 'completed');
+  const outputFile = typeof outputRow?.output_txt_path === 'string'
+    ? outputRow.output_txt_path
+    : undefined;
 
   return {
     id: job.id,
     status,
-    progress: job.progress <= 1 ? job.progress * 100 : job.progress,
+    // Backend ProgressEvent.progress is normalized 0-1; UI components consume 0-100.
+    progress: Math.max(0, Math.min(100, job.progress * 100)),
     created_at: job.created_at,
     updated_at: job.finished_at || job.started_at || job.created_at,
     input_files: job.file_paths,
     output_folder: job.output_folder,
+    output_file: outputFile,
     error: job.error_message || undefined,
     model_id: job.options.model_name || job.options.model_id || 'large-v3',
     options: job.options,
     current_file: job.current_file || undefined,
     status_rows: job.status_rows,
+    cancel_requested: job.cancel_requested,
+    metrics: job.last_progress_event?.metrics,
+    last_progress_event: job.last_progress_event || undefined,
   };
 };
 
@@ -90,7 +113,62 @@ export const queryKeys = {
   model: (id: string) => ['models', id] as const,
   settings: ['settings'] as const,
   result: (jobId: string) => ['results', jobId] as const,
+  backendStatus: ['backend-status'] as const,
+  logs: ['logs'] as const,
 };
+
+function eventJob(event: ProgressEvent): BackendJob | null {
+  const job = event.payload?.job;
+  if (job && typeof job === 'object' && 'id' in job) {
+    return job as BackendJob;
+  }
+  return null;
+}
+
+export function useLiveBackendEvents(): void {
+  const queryClient = useQueryClient();
+
+  const handleEvent = useCallback((event: ProgressEvent) => {
+    if (event.type === 'job_progress' || event.type === 'job_state' || event.type === 'job_stop_requested' || event.type === 'job_created') {
+      const backendJob = eventJob(event);
+      if (backendJob) {
+        const mappedJob = toJob(backendJob);
+        queryClient.setQueryData(queryKeys.job(mappedJob.id), mappedJob);
+        queryClient.setQueryData<Job[]>(queryKeys.jobs, (current) => {
+          if (!current) return [mappedJob];
+          const exists = current.some((job) => job.id === mappedJob.id);
+          return exists
+            ? current.map((job) => (job.id === mappedJob.id ? mappedJob : job))
+            : [mappedJob, ...current];
+        });
+      }
+
+      if (event.type !== 'job_progress') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      }
+      if (event.job_id) {
+        if (event.type !== 'job_progress') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.job(event.job_id) });
+        }
+        const state = String(event.payload?.state || backendJob?.state || '');
+        if (['completed', 'failed', 'cancelled'].includes(state)) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.result(event.job_id) });
+          queryClient.invalidateQueries({ queryKey: queryKeys.logs });
+        }
+      }
+    }
+
+    if (event.type === 'model_download') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models });
+    }
+
+    if (event.type === 'backend_status') {
+      queryClient.setQueryData(queryKeys.backendStatus, event.payload);
+    }
+  }, [queryClient]);
+
+  useWebSocket(handleEvent);
+}
 
 // Jobs Hooks
 export function useJobs(): UseQueryResult<Job[]> {
@@ -100,7 +178,7 @@ export function useJobs(): UseQueryResult<Job[]> {
       const response = await apiClient.get<{ jobs: BackendJob[] }>('/jobs');
       return response.jobs.map(toJob);
     },
-    refetchInterval: 2000, // Poll every 2 seconds for active jobs
+    refetchInterval: 30000, // WebSocket drives live updates; polling is fallback only.
   });
 }
 
@@ -112,7 +190,7 @@ export function useJob(jobId: string): UseQueryResult<Job> {
     refetchInterval: (query) => {
       // Poll while job is active
       if (query.state.data?.status === 'pending' || query.state.data?.status === 'processing') {
-        return 1000;
+        return 30000;
       }
       return false;
     },
@@ -262,7 +340,7 @@ export function useTranscriptionResult(jobId: string): UseQueryResult<Transcript
     queryKey: queryKeys.result(jobId),
     queryFn: () => apiClient.get<TranscriptionResult>(`/jobs/${jobId}/result`),
     enabled: !!jobId,
-    staleTime: Infinity, // Results don't change
+    staleTime: 5000,
   });
 }
 

@@ -9,7 +9,7 @@ import { useJobs, useTranscriptionResult } from '@/api/hooks';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 
-type FilterStatus = 'all' | 'completed' | 'warnings' | 'failed';
+type FilterStatus = 'all' | 'completed' | 'warnings' | 'failed' | 'cancelled';
 
 interface ResultRowProps {
   job: Job;
@@ -22,6 +22,7 @@ const ResultRow: React.FC<ResultRowProps> = ({ job, isSelected, onSelect }) => {
   const statusVariant =
     job.status === 'completed' ? (hasWarnings ? 'warning' : 'completed') :
     job.status === 'failed' ? 'failed' :
+    job.status === 'cancelled' ? 'cancelled' :
     job.status === 'processing' ? 'running' : 'skipped';
 
   const formatDate = (dateString: string) => {
@@ -213,7 +214,13 @@ const TranscriptPreview: React.FC<TranscriptPreviewProps> = ({ jobId, job }) => 
             </div>
           </div>
           <Badge
-            variant={job.status === 'completed' ? 'completed' : 'failed'}
+            variant={
+              job.status === 'completed'
+                ? 'completed'
+                : job.status === 'cancelled'
+                ? 'cancelled'
+                : 'failed'
+            }
           >
             {job.status}
           </Badge>
@@ -350,6 +357,9 @@ export default function Results() {
         if (filterStatus === 'failed') {
           return job.status === 'failed';
         }
+        if (filterStatus === 'cancelled') {
+          return job.status === 'cancelled';
+        }
         return true;
       });
     }
@@ -384,6 +394,7 @@ export default function Results() {
     if (status === 'completed') return jobs.filter(j => j.status === 'completed' && !j.error).length;
     if (status === 'warnings') return jobs.filter(j => j.status === 'completed' && j.error).length;
     if (status === 'failed') return jobs.filter(j => j.status === 'failed').length;
+    if (status === 'cancelled') return jobs.filter(j => j.status === 'cancelled').length;
     return 0;
   };
 
@@ -417,7 +428,7 @@ export default function Results() {
 
             {/* Filter Chips */}
             <div className="flex items-center gap-2 flex-wrap">
-              {(['all', 'completed', 'warnings', 'failed'] as FilterStatus[]).map((status) => (
+              {(['all', 'completed', 'warnings', 'failed', 'cancelled'] as FilterStatus[]).map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}

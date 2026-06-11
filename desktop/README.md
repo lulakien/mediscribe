@@ -45,10 +45,10 @@ MediScribe Local transcribes medical lectures on your machine using Whisper AI. 
 
 The AppImage runs on any modern Linux distribution without installation.
 
-1. **Download** `MediScribe-1.0.0-x64.AppImage` from releases
+1. **Download** `MediScribe-1.0.0-x86_64.AppImage` from releases
 2. **Make it executable**:
    ```bash
-   chmod +x MediScribe-1.0.0-x64.AppImage
+   chmod +x MediScribe-1.0.0-x86_64.AppImage
    ```
 3. **Install ffmpeg** if not already present:
    ```bash
@@ -56,7 +56,7 @@ The AppImage runs on any modern Linux distribution without installation.
    ```
 4. **Run the app**:
    ```bash
-   ./MediScribe-1.0.0-x64.AppImage
+   ./MediScribe-1.0.0-x86_64.AppImage
    ```
 
 **Note**: Ubuntu 22.04+ may require libfuse2:
@@ -70,12 +70,12 @@ The .deb package integrates with your system and auto-installs dependencies.
 
 ```bash
 # Install the package
-sudo dpkg -i mediscribe_1.0.0_amd64.deb
+sudo dpkg -i MediScribe-1.0.0-amd64.deb
 
 # Install dependencies (ffmpeg)
 sudo apt install -f
 
-# Launch from terminal
+# Normal daily launch command
 mediscribe
 
 # Or find "MediScribe" in your application menu
@@ -282,15 +282,21 @@ This runs:
 After building, create distributable packages:
 
 ```bash
-cd /path/to/mediscribe/desktop/electron
+cd /path/to/mediscribe/desktop
 
 # Package for Linux (AppImage + .deb)
 npm run package:linux
 ```
 
 **Output** in `electron/dist-packaged/`:
-- `MediScribe-1.0.0-x64.AppImage` (universal Linux)
-- `mediscribe_1.0.0_amd64.deb` (Debian/Ubuntu package)
+- `MediScribe-1.0.0-x86_64.AppImage` (universal Linux)
+- `MediScribe-1.0.0-amd64.deb` (Debian/Ubuntu package)
+
+After installing the `.deb`, launch the app with:
+
+```bash
+mediscribe
+```
 
 ### Individual Build Commands
 
@@ -584,16 +590,16 @@ python3 -c "from huggingface_hub import snapshot_download; snapshot_download('Sy
 
 ```bash
 # Make executable
-chmod +x MediScribe-1.0.0-x64.AppImage
+chmod +x MediScribe-1.0.0-x86_64.AppImage
 
 # Check for FUSE (required on Ubuntu 22.04+)
 sudo apt install libfuse2
 
 # Try running from terminal to see errors
-./MediScribe-1.0.0-x64.AppImage
+./MediScribe-1.0.0-x86_64.AppImage
 
 # Extract and run directly (if FUSE unavailable)
-./MediScribe-1.0.0-x64.AppImage --appimage-extract
+./MediScribe-1.0.0-x86_64.AppImage --appimage-extract
 cd squashfs-root
 ./mediscribe
 ```

@@ -99,6 +99,7 @@ export default function Advanced() {
 
   const [selectedLog, setSelectedLog] = useState<string>('');
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const [liveLogContent, setLiveLogContent] = useState<string>('');
   const logViewerRef = useRef<HTMLDivElement>(null);
   const outputFolder = settings?.defaultOutputFolder || '';
   const logsPath = outputFolder ? `${outputFolder}/logs` : '';
@@ -146,7 +147,7 @@ export default function Advanced() {
     pythonExecutable: health?.python_executable || 'Unknown',
     platform: health?.platform || appInfo?.platform || 'Unknown',
   };
-  const logContent = logPreview?.content
+  const logContent = liveLogContent || logPreview?.content
     || (outputFolder
       ? `No run log selected or available.\n\nRun logs are read from:\n${logsPath}`
       : 'Choose a default output folder in Settings before run logs are available.');
@@ -156,6 +157,41 @@ export default function Advanced() {
       setSelectedLog(runLogs[0].id);
     }
   }, [selectedLog, runLogs]);
+
+  useEffect(() => {
+    setLiveLogContent(logPreview?.content || '');
+  }, [logPreview?.content, selectedLogPath]);
+
+  useEffect(() => {
+    if (!selectedLogPath) return;
+
+    const controller = new AbortController();
+    const decoder = new TextDecoder();
+
+    const streamLog = async () => {
+      try {
+        const stream = await apiClient.getStream(
+          `/logs/tail?path=${encodeURIComponent(selectedLogPath)}&output_folder=${encodeURIComponent(outputFolder)}`,
+          controller.signal,
+        );
+        const reader = stream.getReader();
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            setLiveLogContent((current) => current + decoder.decode(value, { stream: true }));
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Log tail stream failed:', error);
+        }
+      }
+    };
+
+    void streamLog();
+    return () => controller.abort();
+  }, [outputFolder, selectedLogPath]);
 
   useEffect(() => {
     let cancelled = false;

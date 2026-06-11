@@ -162,6 +162,23 @@ class JobManager:
             self._jobs[job_id] = job
             self._job_queue.put(job_id)
 
+        self._push_event({
+            "type": "job_created",
+            "job_id": job_id,
+            "timestamp": utc_now_iso(),
+            "payload": self._serialize_job(job),
+        })
+        self._push_event({
+            "type": "job_state",
+            "job_id": job_id,
+            "timestamp": utc_now_iso(),
+            "payload": {
+                "state": job.state,
+                "cancel_requested": job.cancel_requested,
+                "progress": job.progress,
+                "job": self._serialize_job(job),
+            },
+        })
         return job_id
 
     def get_job(self, job_id: str) -> Optional[dict[str, Any]]:
@@ -201,11 +218,36 @@ class JobManager:
                 job.state = "cancelled"
                 job.finished_at = utc_now_iso()
                 job.error_message = "Cancelled before processing"
+                self._push_final_state(job)
                 return True
 
             if job.state == "running":
                 # Request cancellation after current file
                 job.cancel_requested = True
+                serialized = self._serialize_job(job)
+                self._push_event({
+                    "type": "job_stop_requested",
+                    "job_id": job.id,
+                    "timestamp": utc_now_iso(),
+                    "payload": {
+                        "state": job.state,
+                        "cancel_requested": True,
+                        "current_file": job.current_file,
+                        "job": serialized,
+                    },
+                })
+                self._push_event({
+                    "type": "job_state",
+                    "job_id": job.id,
+                    "timestamp": utc_now_iso(),
+                    "payload": {
+                        "state": job.state,
+                        "cancel_requested": True,
+                        "current_file": job.current_file,
+                        "progress": job.progress,
+                        "job": serialized,
+                    },
+                })
                 return True
 
         return False
@@ -254,6 +296,18 @@ class JobManager:
                 self._current_job_id = job_id
                 job.state = "running"
                 job.started_at = utc_now_iso()
+                self._push_event({
+                    "type": "job_state",
+                    "job_id": job.id,
+                    "timestamp": utc_now_iso(),
+                    "payload": {
+                        "state": job.state,
+                        "started_at": job.started_at,
+                        "cancel_requested": job.cancel_requested,
+                        "total_files": len(job.file_paths),
+                        "job": self._serialize_job(job),
+                    },
+                })
 
             # Run transcription
             try:
@@ -263,6 +317,7 @@ class JobManager:
                     job.state = "failed"
                     job.error_message = str(e)
                     job.finished_at = utc_now_iso()
+                self._push_final_state(job)
             finally:
                 with self._lock:
                     self._current_job_id = None
@@ -313,23 +368,21 @@ class JobManager:
                     "model_status": event.model_status,
                     "log_tail": event.log_tail,
                     "progress": event.progress,
+                    "state": job.state,
+                    "cancel_requested": job.cancel_requested,
                 }
                 job.last_progress_event = event_dict
+                serialized = self._serialize_job(job)
 
-            # Push to async queue for WebSocket broadcasting
-            if self._event_loop is not None and self._progress_queue is not None:
-                try:
-                    self._event_loop.call_soon_threadsafe(
-                        self._progress_queue.put_nowait,
-                        {
-                            "type": "job_progress",
-                            "job_id": job.id,
-                            "timestamp": utc_now_iso(),
-                            "payload": event_dict,
-                        }
-                    )
-                except Exception:
-                    pass  # Queue full or loop closed, ignore
+            self._push_event({
+                "type": "job_progress",
+                "job_id": job.id,
+                "timestamp": utc_now_iso(),
+                "payload": {
+                    **event_dict,
+                    "job": serialized,
+                },
+            })
 
             # Check cancellation at file boundaries
             # File boundary is indicated by status messages starting with specific prefixes
@@ -375,9 +428,13 @@ class JobManager:
                 job.error_message = str(e)
                 job.finished_at = utc_now_iso()
 
-        # Push final state event
+        self._push_final_state(job)
+
+    def _push_final_state(self, job: Job) -> None:
+        """Push a terminal job state event to WebSocket listeners."""
         if self._event_loop is not None and self._progress_queue is not None:
             try:
+                serialized = self._serialize_job(job)
                 self._event_loop.call_soon_threadsafe(
                     self._progress_queue.put_nowait,
                     {
@@ -388,11 +445,26 @@ class JobManager:
                             "state": job.state,
                             "error_message": job.error_message,
                             "finished_at": job.finished_at,
+                            "cancel_requested": job.cancel_requested,
+                            "progress": job.progress,
+                            "job": serialized,
                         }
                     }
                 )
             except Exception:
                 pass
+
+    def _push_event(self, event: dict[str, Any]) -> None:
+        """Push an event to the async WebSocket queue if it is available."""
+        if self._event_loop is None or self._progress_queue is None:
+            return
+        try:
+            self._event_loop.call_soon_threadsafe(
+                self._progress_queue.put_nowait,
+                event,
+            )
+        except Exception:
+            pass
 
     async def get_progress_event(self) -> Optional[dict[str, Any]]:
         """

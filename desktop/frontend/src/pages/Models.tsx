@@ -313,7 +313,7 @@ export default function ModelsPage() {
 
   // Listen to WebSocket events for download progress
   useWebSocket((event) => {
-    if (event.type === 'download_progress' || event.type === 'model_update') {
+    if (event.type === 'download_progress' || event.type === 'model_update' || event.type === 'model_download') {
       refetch();
     }
   });

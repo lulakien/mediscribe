@@ -32,7 +32,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -832,6 +832,34 @@ async def get_log_preview(path: str, output_folder: Optional[str] = None):
     }
 
 
+@app.get("/logs/tail", dependencies=[Depends(verify_token)])
+async def tail_log(path: str, request: Request, output_folder: Optional[str] = None):
+    """Stream appended log lines from a known run log file."""
+    requested_path = Path(path).expanduser().resolve()
+    if requested_path.suffix.lower() != ".log":
+        raise HTTPException(status_code=400, detail="Log tail supports .log files only")
+
+    roots = [root / "logs" for root in _result_roots(output_folder)]
+    if roots and not _is_under_any_root(requested_path, roots):
+        raise HTTPException(status_code=403, detail="Log file is outside known output folders")
+
+    if not requested_path.exists() or not requested_path.is_file():
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    async def line_stream():
+        with requested_path.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(0, os.SEEK_END)
+            while not await request.is_disconnected():
+                line = handle.readline()
+                if line:
+                    yield line
+                else:
+                    handle.seek(handle.tell())
+                    await asyncio.sleep(0.5)
+
+    return StreamingResponse(line_stream(), media_type="text/plain; charset=utf-8")
+
+
 def _result_roots(output_folder: Optional[str]) -> List[Path]:
     """Return explicit or configured output folders for manifest-backed results."""
     if output_folder:
@@ -892,6 +920,19 @@ async def websocket_events(websocket: WebSocket):
             "type": "connected",
             "timestamp": utc_now_iso(),
             "payload": {"version": APP_VERSION}
+        })
+        config = get_config_manager().get()
+        cuda_available, cuda_device = detect_cuda_status()
+        await websocket.send_json({
+            "type": "backend_status",
+            "timestamp": utc_now_iso(),
+            "payload": {
+                "status": "running",
+                "cuda_available": cuda_available,
+                "cuda_device": cuda_device,
+                "default_model": config.get("defaultModel", "large-v3"),
+                "version": APP_VERSION,
+            },
         })
 
         # Event broadcasting loop

@@ -28,6 +28,7 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Build / packaging
 dist/
@@ -39,3 +40,25 @@ build/
 .cache/
 *.tmp
 *.temp
+
+# Local app data and model caches
+.mediscribe/
+mediscribe-data/
+models/
+model-cache/
+huggingface/
+hf-cache/
+
+# User media/transcription outputs; keep fixtures explicit if needed
+*.mp3
+*.mpeg
+*.mpga
+*.m4a
+*.wav
+*.flac
+*.ogg
+*.opus
+*.webm
+transcripts/
+manifests/
+temp/

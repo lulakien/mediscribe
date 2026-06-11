@@ -16,12 +16,13 @@
     "dev:electron": "cd electron && npm run watch",
     "start": "cd electron && npm start",
     "package": "npm run build:all && cd electron && npm run package",
+    "package:linux": "npm run build:all && cd electron && npm run package:linux",
     "clean": "rm -rf frontend/dist electron/dist electron/dist-packaged",
     "postinstall": "cd frontend && npm install && cd ../electron && npm install"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/mediscribe.git"
+    "url": "https://github.com/lulakien/mediscribe.git"
   },
   "keywords": [
     "transcription",

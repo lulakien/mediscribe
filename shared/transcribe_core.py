@@ -418,7 +418,32 @@ def transcribe_files(
 
     for index, plan in enumerate(plans, start=1):
         source_path = plan.source_path
+        set_status_row(
+            status_rows,
+            file=plan.original_filename or source_path.name,
+            source=normalize_source_path(str(source_path)),
+            status="probing",
+        )
+        emit(
+            progress_callback,
+            f"Probing {source_path.name}",
+            status_rows,
+            RunMetrics(total_processed_duration=total_processed_duration, total_elapsed_time=time.monotonic() - run_started),
+            model_status=model_status,
+            current_file=source_path.name,
+            log_tail=log_buffer.text(),
+            progress=(completed_items + index - 1) / total_items,
+        )
+
         metadata = probe_audio(source_path, ffprobe_path)
+        set_status_row(
+            status_rows,
+            file=plan.original_filename or source_path.name,
+            source=normalize_source_path(str(source_path)),
+            duration_seconds=metadata.duration_seconds,
+            duration=seconds_to_hms(metadata.duration_seconds),
+            status="pending",
+        )
         warnings = list(plan.warnings) + metadata.warnings
         if ffprobe_path is None:
             warnings.append("ffprobe missing; audio metadata may be incomplete.")
@@ -512,6 +537,15 @@ def transcribe_files(
         file_started = time.monotonic()
         temp_audio: Path | None = None
         try:
+            set_status_row(
+                status_rows,
+                file=plan.original_filename or source_path.name,
+                source=normalize_source_path(str(source_path)),
+                duration_seconds=metadata.duration_seconds,
+                duration=seconds_to_hms(metadata.duration_seconds),
+                status="processing",
+                warning=join_warnings(warnings),
+            )
             if backend is None:
                 backend = LocalWhisperBackend(options, logger)
                 model_status = "Loading model..."
@@ -1188,16 +1222,60 @@ def write_manifests(manifest_dir: Path, rows: list[ManifestRow]) -> None:
 
 
 def append_status(status_rows: list[dict[str, Any]], row: ManifestRow) -> None:
-    status_rows.append(
-        {
-            "file": row.original_filename,
-            "source": row.source_path,
-            "duration": row.duration_hms,
-            "status": row.transcription_status,
-            "warning/error": row.error_message or row.warnings,
-            "output": row.safe_output_stem,
-        }
+    set_status_row(
+        status_rows,
+        file=row.original_filename,
+        source=row.source_path,
+        duration=row.duration_hms,
+        duration_seconds=row.duration_seconds,
+        status=row.transcription_status,
+        warning=row.warnings,
+        error=row.error_message,
+        output=row.safe_output_stem,
+        output_txt_path=row.output_txt_path,
+        output_md_path=row.output_md_path,
+        output_json_path=row.output_json_path,
     )
+
+
+def set_status_row(
+    status_rows: list[dict[str, Any]],
+    *,
+    file: str,
+    source: str,
+    status: str,
+    duration: str | None = None,
+    duration_seconds: float | None = None,
+    warning: str = "",
+    error: str = "",
+    output: str = "",
+    output_txt_path: str = "",
+    output_md_path: str = "",
+    output_json_path: str = "",
+) -> None:
+    row = {
+        "file": file,
+        "source": source,
+        "duration": duration or "",
+        "duration_seconds": round_float(duration_seconds),
+        "status": status,
+        "warning": warning,
+        "error": error,
+        "warning/error": error or warning,
+        "output": output,
+        "output_txt_path": output_txt_path,
+        "output_md_path": output_md_path,
+        "output_json_path": output_json_path,
+    }
+    for index, existing in enumerate(status_rows):
+        if existing.get("source") == source:
+            merged = dict(existing)
+            merged.update({key: value for key, value in row.items() if value not in ("", None)})
+            merged["status"] = status
+            merged["warning/error"] = merged.get("error") or merged.get("warning") or ""
+            status_rows[index] = merged
+            return
+    status_rows.append(row)
 
 
 def setup_run_logger(log_path: Path) -> logging.Logger:

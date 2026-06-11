@@ -78,6 +78,7 @@ interface AudioFile {
 
 interface RunState {
   status: 'idle' | 'active' | 'finished';
+  terminalStatus?: 'completed' | 'failed' | 'cancelled';
   currentFile?: string;
   progress: number;
   filesCompleted: number;
@@ -89,10 +90,11 @@ interface RunState {
   skippedCount: number;
   failedCount: number;
   warningCount: number;
+  cancelRequested: boolean;
   queueRows: Array<{
     file: string;
     duration: number;
-    status: 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+    status: 'pending' | 'probing' | 'processing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
     warning?: string;
   }>;
   previewText?: string;
@@ -151,6 +153,7 @@ export default function Transcribe() {
     skippedCount: 0,
     failedCount: 0,
     warningCount: 0,
+    cancelRequested: false,
     queueRows: [],
   });
 
@@ -163,6 +166,11 @@ export default function Transcribe() {
   useEffect(() => {
     if (!activeJob) return;
 
+    const durationByKey = new Map<string, number>();
+    selectedFiles.forEach((file) => {
+      durationByKey.set(file.path, file.duration);
+      durationByKey.set(file.name, file.duration);
+    });
     const fileRows = activeJob.status_rows?.length
       ? activeJob.status_rows.map((row) => {
           const file = String(row.file || row.source || 'Audio file');
@@ -172,57 +180,101 @@ export default function Transcribe() {
               ? 'completed'
               : statusValue === 'failed'
               ? 'failed'
-              : statusValue === 'skipped'
+              : statusValue === 'skipped' || statusValue === 'scan_only' || statusValue === 'unsupported'
               ? 'skipped'
-              : file === activeJob.current_file
+              : statusValue === 'cancelled'
+              ? 'cancelled'
+              : statusValue === 'probing'
+              ? 'probing'
+              : statusValue === 'processing' || file === activeJob.current_file || row.source === activeJob.current_file
               ? 'processing'
               : 'pending';
+          const durationSeconds = Number(row.duration_seconds);
+          const warning = String(row.warning || row.error || row['warning/error'] || '') || undefined;
 
           return {
             file,
-            duration: 0,
+            duration: Number.isFinite(durationSeconds)
+              ? Math.round(durationSeconds)
+              : durationByKey.get(String(row.source || '')) || durationByKey.get(file) || 0,
             status: rowStatus,
-            warning: String(row['warning/error'] || row.warning || '') || undefined,
+            warning,
           };
         })
-      : selectedFiles.map((file) => ({
-          file: file.name,
-          duration: file.duration,
-          status:
-            file.path === activeJob.current_file
-              ? ('processing' as const)
-              : activeJob.status === 'completed'
-              ? ('completed' as const)
-              : ('pending' as const),
-          warning: undefined,
-        }));
+      : activeJob.input_files.map((path) => {
+          const selected = selectedFiles.find((file) => file.path === path);
+          return {
+            file: selected?.name || path.split('/').pop() || path,
+            duration: selected?.duration || 0,
+            status:
+              path === activeJob.current_file
+                ? ('processing' as const)
+                : activeJob.status === 'completed'
+                ? ('completed' as const)
+                : activeJob.status === 'cancelled'
+                ? ('cancelled' as const)
+                : ('pending' as const),
+            warning: undefined,
+          };
+        });
+
+    if (activeJob.cancel_requested) {
+      for (const row of fileRows) {
+        if (row.status === 'pending' || row.status === 'probing') {
+          row.status = 'skipped';
+          row.warning = row.warning || 'Will be skipped';
+        }
+      }
+    }
 
     const completedCount = fileRows.filter((row) => row.status === 'completed').length;
     const failedCount = fileRows.filter((row) => row.status === 'failed').length;
     const skippedCount = fileRows.filter((row) => row.status === 'skipped').length;
     const warningCount = fileRows.filter((row) => row.warning).length;
+    const metrics = activeJob.metrics || activeJob.last_progress_event?.metrics;
+    const elapsed = Math.floor(metrics?.total_elapsed_time || 0);
+    const audioProcessed = Math.floor(metrics?.total_processed_duration || 0);
+    const realtimeFactor = metrics?.total_elapsed_time && metrics.total_elapsed_time > 0
+      ? (metrics.total_processed_duration || 0) / metrics.total_elapsed_time
+      : metrics?.realtime_factor || 0;
+    const isFinished = ['completed', 'failed', 'cancelled'].includes(activeJob.status);
 
     setRunState({
       status:
-        activeJob.status === 'completed' || activeJob.status === 'failed'
+        isFinished
           ? 'finished'
           : activeJob.status === 'processing' || activeJob.status === 'pending'
           ? 'active'
           : 'idle',
+      terminalStatus: isFinished ? activeJob.status as RunState['terminalStatus'] : undefined,
       currentFile: activeJob.current_file?.split('/').pop() || fileRows.find((row) => row.status === 'processing')?.file,
       progress: activeJob.progress,
       filesCompleted: completedCount,
       filesTotal: activeJob.input_files.length,
-      elapsed: 0,
-      realtimeFactor: 0,
-      audioProcessed: 0,
+      elapsed,
+      realtimeFactor,
+      audioProcessed,
       completedCount,
       skippedCount,
       failedCount: activeJob.status === 'failed' && failedCount === 0 ? 1 : failedCount,
       warningCount,
+      cancelRequested: Boolean(activeJob.cancel_requested),
       queueRows: fileRows,
     });
   }, [activeJob, selectedFiles]);
+
+  useEffect(() => {
+    if (runState.status !== 'active' || activeJob?.metrics?.total_elapsed_time) return;
+    const startedAt = activeJob?.updated_at ? new Date(activeJob.updated_at).getTime() : Date.now();
+    const interval = window.setInterval(() => {
+      setRunState((current) => (
+        current.status === 'active'
+          ? { ...current, elapsed: Math.max(current.elapsed, Math.floor((Date.now() - startedAt) / 1000)) }
+          : current
+      ));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [activeJob?.metrics?.total_elapsed_time, activeJob?.updated_at, runState.status]);
 
   // Drag and drop handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -377,6 +429,7 @@ export default function Transcribe() {
         skippedCount: 0,
         failedCount: 0,
         warningCount: 0,
+        cancelRequested: false,
         queueRows: supportedFiles.map((file) => ({
           file: file.name,
           duration: file.duration,
@@ -411,9 +464,10 @@ export default function Transcribe() {
   const canStart = selectedFiles.some((file) => file.status === 'supported') && modelInstalled && !createJob.isPending;
 
   const formatDuration = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
+    const wholeSeconds = Math.max(0, Math.floor(seconds || 0));
+    const h = Math.floor(wholeSeconds / 3600);
+    const m = Math.floor((wholeSeconds % 3600) / 60);
+    const s = wholeSeconds % 60;
     if (h > 0) return `${h}h ${m}m`;
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
@@ -426,8 +480,9 @@ export default function Transcribe() {
   };
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const wholeSeconds = Math.max(0, Math.floor(seconds || 0));
+    const m = Math.floor(wholeSeconds / 60);
+    const s = wholeSeconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
@@ -773,9 +828,13 @@ export default function Transcribe() {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Activity className="h-4 w-4 text-olive animate-pulse" />
-                    <p className="text-small text-text-muted">Processing</p>
+                    <p className="text-small text-text-muted">
+                      {runState.cancelRequested ? 'Stopping after current file' : 'Processing'}
+                    </p>
                   </div>
-                  <p className="text-body font-medium truncate mb-3">{runState.currentFile}</p>
+                  <p className="text-body font-medium truncate mb-3">
+                    {runState.cancelRequested ? 'Completing current file...' : runState.currentFile}
+                  </p>
                   <Progress value={runState.progress} max={100} showPercent />
                 </div>
 
@@ -813,8 +872,10 @@ export default function Transcribe() {
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-button border border-border transition-all',
                           row.status === 'processing' && 'bg-primary-soft/20 border-primary/30',
+                          row.status === 'probing' && 'bg-primary-soft/10 border-primary/20',
                           row.status === 'completed' && 'bg-success-soft/20',
-                          row.status === 'failed' && 'bg-error-soft/20'
+                          row.status === 'failed' && 'bg-error-soft/20',
+                          (row.status === 'cancelled' || (runState.cancelRequested && row.status === 'skipped')) && 'opacity-70'
                         )}
                       >
                         <div className="flex-1 min-w-0">
@@ -827,15 +888,19 @@ export default function Transcribe() {
                               variant={
                                 row.status === 'completed'
                                   ? 'completed'
-                                  : row.status === 'processing'
+                                  : row.status === 'processing' || row.status === 'probing'
                                   ? 'running'
                                   : row.status === 'failed'
                                   ? 'failed'
+                                  : row.status === 'cancelled'
+                                  ? 'cancelled'
+                                  : row.status === 'skipped'
+                                  ? 'skipped'
                                   : 'default'
                               }
-                              pulse={row.status === 'processing'}
+                              pulse={row.status === 'processing' || row.status === 'probing'}
                             >
-                              {row.status}
+                              {runState.cancelRequested && row.status === 'skipped' ? 'will be skipped' : row.status}
                             </Badge>
                             {row.warning && (
                               <AlertCircle className="h-3 w-3 text-warning" />
@@ -852,10 +917,10 @@ export default function Transcribe() {
                   variant="danger"
                   className="w-full"
                   onClick={handleStopAfterCurrent}
-                  disabled={!activeJobId || cancelJob.isPending}
+                  disabled={!activeJobId || cancelJob.isPending || runState.cancelRequested}
                 >
                   <StopCircle className="h-4 w-4 mr-2" />
-                  Stop after current file
+                  {runState.cancelRequested ? 'Stopping...' : 'Stop after current file'}
                 </Button>
               </div>
             )}
@@ -877,7 +942,13 @@ export default function Transcribe() {
                   <CardContent className="py-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="h-5 w-5 text-success" />
-                      <p className="text-body font-medium">Transcription complete</p>
+                      <p className="text-body font-medium">
+                        {runState.terminalStatus === 'cancelled'
+                          ? 'Transcription cancelled'
+                          : runState.terminalStatus === 'failed'
+                          ? 'Transcription failed'
+                          : 'Transcription complete'}
+                      </p>
                     </div>
                     <div className="flex gap-4 text-small text-text-muted">
                       {runState.completedCount > 0 && (

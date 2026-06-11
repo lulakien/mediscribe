@@ -39,6 +39,16 @@ mediscribe/
 - ffmpeg (`sudo apt install ffmpeg`)
 - NVIDIA GPU with CUDA (optional, for acceleration)
 
+### Daily launch
+
+After installing the Debian/Ubuntu package, the normal user launch command is:
+
+```bash
+mediscribe
+```
+
+The package also installs a "MediScribe" desktop launcher in the application menu.
+
 ### Prototype (Gradio)
 
 ```bash
@@ -79,10 +89,10 @@ npm run watch
 cd desktop
 npm install
 npm run build:all
-cd electron && npm run package:linux
+npm run package:linux
 ```
 
-Output: `electron/dist-packaged/` (AppImage + .deb)
+Output: `electron/dist-packaged/` (AppImage + .deb). After installing the `.deb`, launch with `mediscribe`.
 
 ## Key features
 

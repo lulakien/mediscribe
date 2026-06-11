@@ -11,6 +11,7 @@ const badgeVariants = cva(
         completed: "bg-success-soft text-success",
         running: "bg-primary-soft text-primary",
         failed: "bg-error-soft text-error",
+        cancelled: "bg-surface-2 text-text-muted",
         skipped: "bg-surface-2 text-text-muted",
         "scan-only": "bg-info text-text-muted",
         unsupported: "bg-warning-soft text-warning",

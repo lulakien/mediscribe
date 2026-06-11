@@ -14,13 +14,13 @@ import { useJobs } from '@/api/hooks';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 
-type FilterStatus = 'all' | 'running' | 'completed' | 'failed' | 'skipped';
+type FilterStatus = 'all' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
 
 interface JobRowData {
   id: string;
   fileName: string;
   duration: number | null;
-  status: 'running' | 'completed' | 'failed' | 'skipped';
+  status: 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
   processingTime: number | null;
   realtimeFactor: number | null;
   model: string;
@@ -120,9 +120,7 @@ const JobTableRow: React.FC<JobTableRowProps> = ({ row, isExpanded, onToggleExpa
 
   const formatRealtimeFactor = (factor: number | null) => {
     if (factor === null) return '—';
-    // Convert 0.18 (slower than realtime) to "5.5× realtime" (faster than realtime)
-    const realtimeSpeed = 1 / factor;
-    return `${realtimeSpeed.toFixed(1)}× realtime`;
+    return `${factor.toFixed(1)}× realtime`;
   };
 
   const getStatusVariant = (status: string) => {
@@ -135,6 +133,8 @@ const JobTableRow: React.FC<JobTableRowProps> = ({ row, isExpanded, onToggleExpa
         return 'failed';
       case 'skipped':
         return 'skipped';
+      case 'cancelled':
+        return 'cancelled';
       default:
         return 'default';
     }
@@ -233,17 +233,27 @@ export default function Jobs() {
       status = 'failed';
     } else if (job.status === 'completed') {
       status = 'completed';
+    } else if (job.status === 'cancelled') {
+      status = 'cancelled';
     }
 
-    const duration = null;
-    const processingTime = null;
-    const realtimeFactor = null;
+    const firstRow = job.status_rows?.[0];
+    const durationValue = Number(firstRow?.duration_seconds);
+    const duration = Number.isFinite(durationValue) ? durationValue : null;
+    const processingTime = job.metrics?.total_elapsed_time ?? null;
+    const realtimeFactor = job.metrics?.total_elapsed_time && job.metrics.total_elapsed_time > 0
+      ? (job.metrics.total_processed_duration || 0) / job.metrics.total_elapsed_time
+      : job.metrics?.realtime_factor ?? null;
 
     // Parse warnings from error field (if it contains warnings but status is completed)
     const warnings: string[] = [];
     if (job.error && status === 'completed') {
       warnings.push(job.error);
     }
+    job.status_rows?.forEach((row) => {
+      const warning = String(row.warning || row.error || row['warning/error'] || '');
+      if (warning && !warnings.includes(warning)) warnings.push(warning);
+    });
 
     return {
       id: job.id,
@@ -259,7 +269,7 @@ export default function Jobs() {
       device: job.options.device || '—',
       computeType: job.options.compute_type || '—',
       outputStem: job.output_file,
-      errorMessage: status === 'failed' ? job.error : undefined,
+      errorMessage: status === 'failed' || status === 'cancelled' ? job.error : undefined,
     };
   };
 
@@ -307,7 +317,7 @@ export default function Jobs() {
         {/* Filter Chips */}
         <div className="flex-shrink-0 px-8 py-4 border-b border-border">
           <div className="flex items-center gap-2 flex-wrap">
-            {(['all', 'running', 'completed', 'failed', 'skipped'] as FilterStatus[]).map((status) => (
+            {(['all', 'running', 'completed', 'failed', 'skipped', 'cancelled'] as FilterStatus[]).map((status) => (
               <button
                 key={status}
                 onClick={() => setFilterStatus(status)}

@@ -217,6 +217,16 @@ def test_async_queue_integration():
 
     retrieved_event = loop.run_until_complete(get_event())
     assert retrieved_event is not None
+    assert retrieved_event["type"] == "job_created"
+    assert retrieved_event["job_id"] == job_id
+
+    retrieved_event = loop.run_until_complete(get_event())
+    assert retrieved_event is not None
+    assert retrieved_event["type"] == "job_state"
+    assert retrieved_event["job_id"] == job_id
+
+    retrieved_event = loop.run_until_complete(get_event())
+    assert retrieved_event is not None
     assert retrieved_event["type"] == "job_progress"
     assert retrieved_event["job_id"] == job_id
     assert retrieved_event["payload"]["progress"] == 0.5

@@ -1,8 +1,8 @@
 {
-  "name": "mediscribe-electron",
+  "name": "mediscribe",
   "version": "1.0.0",
   "description": "MediScribe Desktop - Electron main process",
-  "homepage": "https://github.com/yourusername/mediscribe",
+  "homepage": "https://github.com/lulakien/mediscribe",
   "author": "MediScribe Contributors <maintainers@mediscribe.local>",
   "main": "dist/main.js",
   "scripts": {

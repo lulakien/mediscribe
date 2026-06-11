@@ -60,6 +60,7 @@ npm run build:backend     # No-op (Python source used directly)
 
 # Package for Linux
 npm run package           # Creates AppImage + deb
+npm run package:linux     # Linux-only package shortcut
 ```
 
 ### From Electron Directory (`desktop/electron/`)
@@ -105,8 +106,8 @@ Key settings in `desktop/electron/package.json`:
 
 **Usage**:
 ```bash
-chmod +x MediScribe-1.0.0-x64.AppImage
-./MediScribe-1.0.0-x64.AppImage
+chmod +x MediScribe-1.0.0-x86_64.AppImage
+./MediScribe-1.0.0-x86_64.AppImage
 ```
 
 ### deb Package
@@ -118,7 +119,7 @@ chmod +x MediScribe-1.0.0-x64.AppImage
 
 **Usage**:
 ```bash
-sudo dpkg -i MediScribe-1.0.0-x64.deb
+sudo dpkg -i MediScribe-1.0.0-amd64.deb
 sudo apt install -f  # Install dependencies
 mediscribe           # Launch
 ```
@@ -126,6 +127,7 @@ mediscribe           # Launch
 ## Post-Install Script (.deb only)
 
 `build/after-install.sh` runs after .deb installation:
+- Installs `/usr/bin/mediscribe` as the normal terminal launcher
 - Checks for ffmpeg/ffprobe
 - Detects NVIDIA driver
 - Provides helpful setup feedback
@@ -147,9 +149,15 @@ Design guidelines (per DESIGN.md §3):
 After `npm run package`, find packages in:
 ```
 electron/dist-packaged/
-├── MediScribe-1.0.0-x64.AppImage
-├── MediScribe-1.0.0-x64.deb
+├── MediScribe-1.0.0-x86_64.AppImage
+├── MediScribe-1.0.0-amd64.deb
 └── linux-unpacked/  (debug directory)
+```
+
+After installing the `.deb`, the intended daily launch command is:
+
+```bash
+mediscribe
 ```
 
 ## Testing Packages
@@ -158,11 +166,11 @@ electron/dist-packaged/
 
 ```bash
 # Make executable and run
-chmod +x MediScribe-1.0.0-x64.AppImage
-./MediScribe-1.0.0-x64.AppImage
+chmod +x MediScribe-1.0.0-x86_64.AppImage
+./MediScribe-1.0.0-x86_64.AppImage
 
 # Extract for inspection
-./MediScribe-1.0.0-x64.AppImage --appimage-extract
+./MediScribe-1.0.0-x86_64.AppImage --appimage-extract
 ls squashfs-root/
 ```
 
@@ -170,15 +178,15 @@ ls squashfs-root/
 
 ```bash
 # Install
-sudo dpkg -i MediScribe-1.0.0-x64.deb
+sudo dpkg -i MediScribe-1.0.0-amd64.deb
 sudo apt install -f
 
 # Test launch
 mediscribe
 
 # Inspect package
-dpkg -c MediScribe-1.0.0-x64.deb  # List contents
-dpkg -I MediScribe-1.0.0-x64.deb  # Show metadata
+dpkg -c MediScribe-1.0.0-amd64.deb  # List contents
+dpkg -I MediScribe-1.0.0-amd64.deb  # Show metadata
 
 # Uninstall
 sudo apt remove mediscribe

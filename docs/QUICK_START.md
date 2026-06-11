@@ -2,7 +2,7 @@
 
 ## Current Status
 
-✅ **Buildable** - Core implementation is present, frontend/Electron builds pass, and Linux packages can be produced. Backend runtime setup still needs system libav development packages before dependency installation and live transcription testing.
+✅ **Buildable and packageable** - Core implementation is present, frontend/Electron builds pass, backend tests pass, and Linux packages can be produced.
 
 Current backend dependency setup has been updated for Python 3.14. The project venv at `desktop/backend/.venv` resolves `ctranslate2`, `faster_whisper`, and FastAPI dependencies. If your IDE still shows unresolved imports, reload the Python language server and select `desktop/backend/.venv/bin/python`.
 
@@ -15,80 +15,45 @@ Current backend dependency setup has been updated for Python 3.14. The project v
 - ✅ Design system with warm earth palette
 - ✅ Documentation (DESIGN.md, README.md, IMPLEMENTATION_SUMMARY.md)
 
-## What Needs Fixing (In Progress via Workflow)
+## Daily Launch
 
-1. Install missing npm packages
-2. Fix TypeScript imports (Framer Motion, icons)
-3. Move `transcribe_core.py` to shared location
-4. Build frontend for production
-
-## Manual Quick Fix (If You Want to Start Now)
-
-### 1. Install Missing Dependencies
+After installing the Debian/Ubuntu package, launch MediScribe from the terminal with:
 
 ```bash
-cd /home/eren/Desktop/code-projects/mediscribe/desktop
-
-# Install missing Radix UI components at workspace root
-npm install @radix-ui/react-collapsible @radix-ui/react-label
+mediscribe
 ```
 
-### 2. Fix Import Errors
+You can also launch "MediScribe" from the desktop application menu.
 
-```bash
-cd desktop/frontend/src
+## Development Setup
 
-# Fix Framer Motion imports (change 'motion/react' to 'framer-motion')
-find . -name "*.tsx" -exec sed -i "s/from 'motion\/react'/from 'framer-motion'/g" {} +
-
-# Fix WaveformIcon (change to Activity icon)
-find . -name "*.tsx" -exec sed -i 's/WaveformIcon/Activity/g' {} +
-```
-
-### 3. Set Up Shared Core
-
-```bash
-cd /home/eren/Desktop/code-projects/mediscribe
-
-# Copy core to shared directory
-cp prototype_gradio/transcribe_core.py shared/
-
-# Update backend to import from shared (edit desktop/backend/main.py)
-# Change: from transcribe_core import ... 
-# To: import sys; sys.path.insert(0, '../../shared'); from transcribe_core import ...
-```
-
-### 4. Build Frontend
-
-```bash
-cd /home/eren/Desktop/code-projects/mediscribe/desktop/frontend
-npm run build
-
-# This creates desktop/frontend/dist/ with production build
-```
-
-### 5. Install Backend Dependencies
+### 1. Install Backend Dependencies
 
 ```bash
 cd /home/eren/Desktop/code-projects/mediscribe/desktop/backend
 
 # Create virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-## Running in Development Mode
+### 2. Install Desktop Dependencies
 
-Once the above fixes are applied:
+```bash
+cd /home/eren/Desktop/code-projects/mediscribe/desktop
+npm install
+```
+
+## Running in Development Mode
 
 ### Terminal 1: Start Backend
 
 ```bash
 cd /home/eren/Desktop/code-projects/mediscribe/desktop/backend
-source venv/bin/activate  # if using venv
+source .venv/bin/activate
 export MEDISCRIBE_PORT=8000
 export MEDISCRIBE_TOKEN=dev-token-12345
 export MEDISCRIBE_DATA_DIR=~/.config/mediscribe
@@ -163,21 +128,13 @@ The Electron window should open and connect to the backend.
 ```bash
 cd /home/eren/Desktop/code-projects/mediscribe/desktop
 
-# Build frontend
-cd frontend
-npm run build
-
-# Build electron
-cd ../electron
-npm run build
-
-# Package for Linux
+# Build frontend, Electron, and package Linux artifacts
 npm run package:linux
 ```
 
 Output files in `desktop/electron/dist-packaged/`:
-- `MediScribe-1.0.0-x64.AppImage` (universal Linux)
-- `mediscribe_1.0.0_amd64.deb` (Debian/Ubuntu)
+- `MediScribe-1.0.0-x86_64.AppImage` (universal Linux)
+- `MediScribe-1.0.0-amd64.deb` (Debian/Ubuntu)
 
 ### Install the Package
 
@@ -191,7 +148,7 @@ chmod +x MediScribe-*.AppImage
 #### .deb
 ```bash
 cd desktop/electron/dist-packaged
-sudo dpkg -i mediscribe_*.deb
+sudo dpkg -i MediScribe-*.deb
 sudo apt install -f  # Install dependencies
 mediscribe
 ```

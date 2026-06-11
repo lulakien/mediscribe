@@ -12,6 +12,7 @@ import {
 import { useUiStore } from '../store/ui-store';
 import { cn } from '../lib/utils';
 import StatusFooter from './StatusFooter';
+import { useLiveBackendEvents } from '../api/hooks';
 
 interface NavItem {
   path: string;
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
 export default function WorkspaceShell() {
   const location = useLocation();
   const { sidebarCollapsed, setSidebarCollapsed } = useUiStore();
+  useLiveBackendEvents();
 
   const isActivePath = (path: string) => {
     if (path === '/results') {

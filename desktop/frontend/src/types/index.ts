@@ -2,7 +2,7 @@
 
 export interface Job {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   created_at: string;
   updated_at: string;
@@ -14,6 +14,30 @@ export interface Job {
   options: TranscriptionOptions;
   current_file?: string;
   status_rows?: Array<Record<string, unknown>>;
+  cancel_requested?: boolean;
+  metrics?: RunMetrics;
+  last_progress_event?: {
+    message?: string;
+    current_file?: string;
+    status_rows?: Array<Record<string, unknown>>;
+    metrics?: RunMetrics;
+    model_status?: string;
+    log_tail?: string;
+    progress?: number;
+    state?: string;
+    cancel_requested?: boolean;
+  };
+}
+
+export interface RunMetrics {
+  current_file_duration?: number | null;
+  wall_time_seconds?: number | null;
+  realtime_factor?: number | null;
+  audio_seconds_per_second?: number | null;
+  total_processed_duration?: number;
+  total_elapsed_time?: number;
+  device_used?: string;
+  compute_type_used?: string;
 }
 
 export interface Model {
@@ -76,13 +100,26 @@ export interface WordTimestamp {
 }
 
 export interface ProgressEvent {
-  type: 'job_update' | 'model_update' | 'download_progress' | 'error';
+  type:
+    | 'connected'
+    | 'backend_status'
+    | 'job_created'
+    | 'job_state'
+    | 'job_progress'
+    | 'job_stop_requested'
+    | 'model_download'
+    | 'job_update'
+    | 'model_update'
+    | 'download_progress'
+    | 'error';
   job_id?: string;
   model_id?: string;
   status?: string;
   progress?: number;
   message?: string;
   error?: string;
+  timestamp?: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface Settings {
