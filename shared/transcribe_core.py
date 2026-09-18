@@ -60,7 +60,7 @@ _OPENROUTER_AUDIO_FORMATS = {
     ".webm": "webm",
 }
 _OPENROUTER_PROVIDER_AUDIO_FORMATS = frozenset({".flac", ".mp3", ".wav"})
-_OPENROUTER_CONVERSION_FORMAT = "flac"
+_OPENROUTER_CONVERSION_FORMAT = "wav"
 
 
 def _openrouter_audio_requires_conversion(audio_path: Path) -> bool:
@@ -952,7 +952,7 @@ def transcribe_files(
             and _openrouter_audio_requires_conversion(source_path)
         )
         if cloud_audio_conversion:
-            warnings.append("Converted to a lossless 16 kHz mono FLAC for Microsoft/Azure audio compatibility.")
+            warnings.append("Converted to a 16 kHz mono WAV for Microsoft/Azure audio compatibility.")
 
         started_at = utc_now()
         output_txt, output_md, output_json = output_file_paths(output_paths, plan.safe_output_stem)
