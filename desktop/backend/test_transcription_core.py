@@ -184,6 +184,14 @@ def test_default_openrouter_transport_uses_verified_ssl_context(monkeypatch, tmp
     assert context.check_hostname is True
 
 
+def test_openrouter_converts_provider_incompatible_audio_formats():
+    assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.m4a")) is True
+    assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.ogg")) is True
+    assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.wav")) is False
+    assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.mp3")) is False
+    assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.flac")) is False
+
+
 def test_mai_transcribe_two_request_and_segment_mapping(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MEDISCRIBE_TEST_OPENROUTER_KEY", "synthetic-test-key")
     audio_path = tmp_path / "sample.wav"

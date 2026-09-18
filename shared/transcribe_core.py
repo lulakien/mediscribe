@@ -59,6 +59,12 @@ _OPENROUTER_AUDIO_FORMATS = {
     ".wav": "wav",
     ".webm": "webm",
 }
+_OPENROUTER_PROVIDER_AUDIO_FORMATS = frozenset({".flac", ".mp3", ".wav"})
+
+
+def _openrouter_audio_requires_conversion(audio_path: Path) -> bool:
+    """Return whether Azure's OpenRouter adapter needs a compatible WAV input."""
+    return audio_path.suffix.lower() not in _OPENROUTER_PROVIDER_AUDIO_FORMATS
 
 
 def _openrouter_urlopen(request: Request, timeout: float):
@@ -940,6 +946,12 @@ def transcribe_files(
             warnings.append("ffmpeg missing; original audio will be sent directly to backend.")
         if metadata.duration_seconds is not None and metadata.duration_seconds < 5:
             warnings.append("File duration is very short.")
+        cloud_audio_conversion = (
+            options.backend == OPENROUTER_TRANSCRIBE_BACKEND
+            and _openrouter_audio_requires_conversion(source_path)
+        )
+        if cloud_audio_conversion:
+            warnings.append("Converted to a 16 kHz mono WAV for Microsoft/Azure audio compatibility.")
 
         started_at = utc_now()
         output_txt, output_md, output_json = output_file_paths(output_paths, plan.safe_output_stem)
@@ -1082,7 +1094,17 @@ def transcribe_files(
                     progress=(completed_items + index - 1) / total_items,
                 )
 
-            temp_audio = prepare_working_audio(source_path, output_paths["temp"], ffmpeg_path, normalize_audio, logger)
+            if cloud_audio_conversion and ffmpeg_path is None:
+                raise RuntimeError(
+                    "Microsoft/OpenRouter transcription requires ffmpeg to convert this audio file to WAV."
+                )
+            temp_audio = prepare_working_audio(
+                source_path,
+                output_paths["temp"],
+                ffmpeg_path,
+                normalize_audio,
+                logger,
+            )
             result = backend.transcribe_file(temp_audio or source_path, options)
             warnings.extend(result.warnings)
             transcript_text = "\n".join(seg.text.strip() for seg in result.segments if seg.text.strip()).strip()

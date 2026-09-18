@@ -58,6 +58,9 @@ when the saved gateway setting is enabled.
 - The endpoint is fixed to `https://openrouter.ai/api/v1/audio/transcriptions`.
 - Supported models are `microsoft/mai-transcribe-2` and
   `microsoft/mai-transcribe-1.5`.
+- The Azure-backed Microsoft provider accepts WAV, MP3, and FLAC reliably. The
+  desktop converts other supported inputs such as M4A to a 16 kHz mono WAV
+  with FFmpeg before sending them to OpenRouter.
 - Request timeout is capped at 60 seconds.
 - The key is read from the sandbox Keychain first, then the named environment
   variable, and is not included in logs, manifests, errors, or persisted JSON
