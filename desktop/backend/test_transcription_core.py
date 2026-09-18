@@ -192,6 +192,29 @@ def test_openrouter_converts_provider_incompatible_audio_formats():
     assert transcribe_core._openrouter_audio_requires_conversion(Path("recording.flac")) is False
 
 
+def test_prepare_working_audio_supports_lossless_flac_output(monkeypatch, tmp_path: Path):
+    source_path = tmp_path / "recording.m4a"
+    source_path.write_bytes(b"synthetic audio")
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+
+    monkeypatch.setattr(transcribe_core.subprocess, "run", fake_run)
+    output_path = transcribe_core.prepare_working_audio(
+        source_path,
+        tmp_path / "temp",
+        "ffmpeg",
+        False,
+        logging.getLogger("test-audio-prep"),
+        output_format="flac",
+    )
+
+    assert output_path is not None
+    assert output_path.suffix == ".flac"
+    assert commands[0][-3:-1] == ["-f", "flac"]
+
+
 def test_mai_transcribe_two_request_and_segment_mapping(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MEDISCRIBE_TEST_OPENROUTER_KEY", "synthetic-test-key")
     audio_path = tmp_path / "sample.wav"

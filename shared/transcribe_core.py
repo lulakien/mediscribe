@@ -60,6 +60,7 @@ _OPENROUTER_AUDIO_FORMATS = {
     ".webm": "webm",
 }
 _OPENROUTER_PROVIDER_AUDIO_FORMATS = frozenset({".flac", ".mp3", ".wav"})
+_OPENROUTER_CONVERSION_FORMAT = "flac"
 
 
 def _openrouter_audio_requires_conversion(audio_path: Path) -> bool:
@@ -951,7 +952,7 @@ def transcribe_files(
             and _openrouter_audio_requires_conversion(source_path)
         )
         if cloud_audio_conversion:
-            warnings.append("Converted to a 16 kHz mono WAV for Microsoft/Azure audio compatibility.")
+            warnings.append("Converted to a lossless 16 kHz mono FLAC for Microsoft/Azure audio compatibility.")
 
         started_at = utc_now()
         output_txt, output_md, output_json = output_file_paths(output_paths, plan.safe_output_stem)
@@ -1104,6 +1105,7 @@ def transcribe_files(
                 ffmpeg_path,
                 normalize_audio,
                 logger,
+                output_format=_OPENROUTER_CONVERSION_FORMAT if cloud_audio_conversion else "wav",
             )
             result = backend.transcribe_file(temp_audio or source_path, options)
             warnings.extend(result.warnings)
@@ -1417,13 +1419,17 @@ def prepare_working_audio(
     ffmpeg_path: str | None,
     normalize_audio: bool,
     logger: logging.Logger,
+    output_format: str = "wav",
 ) -> Path | None:
     if ffmpeg_path is None:
         logger.warning("ffmpeg missing; using source audio directly.")
         return None
 
+    if output_format not in {"wav", "flac"}:
+        raise ValueError("Unsupported working-audio output format.")
+
     temp_dir.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix="transcribe_", suffix=".wav", dir=temp_dir)
+    fd, temp_name = tempfile.mkstemp(prefix="transcribe_", suffix=f".{output_format}", dir=temp_dir)
     os.close(fd)
     temp_path = Path(temp_name)
     filters = ["loudnorm=I=-16:TP=-1.5:LRA=11"] if normalize_audio else []
@@ -1440,7 +1446,7 @@ def prepare_working_audio(
     ]
     if filters:
         command.extend(["-af", ",".join(filters)])
-    command.extend(["-f", "wav", str(temp_path)])
+    command.extend(["-f", output_format, str(temp_path)])
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, timeout=3600)
     except subprocess.CalledProcessError as exc:
