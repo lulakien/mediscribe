@@ -7,6 +7,7 @@ interface BackendStatus {
   status: 'running' | 'starting' | 'error' | 'unknown';
   cuda_available: boolean;
   cuda_device?: string;
+  mlx_available: boolean;
   default_model?: string;
 }
 
@@ -18,18 +19,21 @@ export default function StatusFooter() {
         const response = await apiClient.get<{
           cuda_available?: boolean;
           cuda_device?: string;
+          mlx_available?: boolean;
           default_model?: string;
         }>('/health');
         return {
           status: 'running' as const,
           cuda_available: response.cuda_available ?? false,
           cuda_device: response.cuda_device,
+          mlx_available: response.mlx_available ?? false,
           default_model: response.default_model,
         };
       } catch (error) {
         return {
           status: 'error' as const,
           cuda_available: false,
+          mlx_available: false,
         };
       }
     },
@@ -38,7 +42,9 @@ export default function StatusFooter() {
   });
 
   const status = backendStatus?.status || 'unknown';
-  const cudaStatus = backendStatus?.cuda_available
+  const acceleratorStatus = backendStatus?.mlx_available
+    ? 'Apple GPU (MLX)'
+    : backendStatus?.cuda_available
     ? backendStatus.cuda_device
       ? `CUDA: ${backendStatus.cuda_device}`
       : 'CUDA: ready'
@@ -81,7 +87,7 @@ export default function StatusFooter() {
 
         {/* CUDA status */}
         <div className="flex items-center gap-1.5">
-          <span>{cudaStatus}</span>
+          <span>{acceleratorStatus}</span>
         </div>
 
         {/* Separator */}

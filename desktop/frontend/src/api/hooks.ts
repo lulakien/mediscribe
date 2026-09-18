@@ -20,6 +20,7 @@ interface BackendModelState {
     name: string;
     description: string;
     approximate_size_gb: number;
+    backend?: 'faster-whisper' | 'mlx';
   };
   status: string;
   download_progress?: {
@@ -68,7 +69,11 @@ const toModel = (state: BackendModelState): Model => ({
   size: state.size_on_disk_bytes
     ? `${(state.size_on_disk_bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
     : `~${state.model_info.approximate_size_gb} GB`,
-  loaded: state.status === 'installed' || state.status === 'ready_on_cuda',
+  loaded:
+    state.status === 'installed' ||
+    state.status === 'ready_on_cuda' ||
+    state.status === 'ready_on_mlx',
+  backend: state.model_info.backend,
   download_progress: state.download_progress?.percent,
 });
 
@@ -112,6 +117,7 @@ export const queryKeys = {
   models: ['models'] as const,
   model: (id: string) => ['models', id] as const,
   settings: ['settings'] as const,
+  openrouterKey: ['settings', 'openrouter-key'] as const,
   result: (jobId: string) => ['results', jobId] as const,
   backendStatus: ['backend-status'] as const,
   logs: ['logs'] as const,
@@ -330,6 +336,30 @@ export function useUpdateSettings(): UseMutationResult<Config, Error, Partial<Co
     mutationFn: (settings) => apiClient.put<Config>('/settings', { updates: settings }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
+
+export interface OpenRouterKeyStatus {
+  configured: boolean;
+}
+
+export function useOpenRouterKeyStatus(): UseQueryResult<OpenRouterKeyStatus> {
+  return useQuery({
+    queryKey: queryKeys.openrouterKey,
+    queryFn: () => apiClient.get<OpenRouterKeyStatus>('/settings/openrouter-key'),
+    staleTime: 30000,
+  });
+}
+
+export function useSaveOpenRouterKey(): UseMutationResult<OpenRouterKeyStatus, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (apiKey) =>
+      apiClient.put<OpenRouterKeyStatus>('/settings/openrouter-key', { api_key: apiKey }),
+    onSuccess: (status) => {
+      queryClient.setQueryData(queryKeys.openrouterKey, status);
     },
   });
 }

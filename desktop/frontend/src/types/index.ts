@@ -46,6 +46,7 @@ export interface Model {
   description: string;
   size: string;
   loaded: boolean;
+  backend?: 'faster-whisper' | 'mlx';
   download_progress?: number;
   local_path?: string;
 }

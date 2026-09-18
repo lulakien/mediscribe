@@ -4,6 +4,7 @@ Test script for model_manager.py
 Verifies the implementation without requiring actual model downloads.
 """
 
+import platform
 import sys
 from pathlib import Path
 
@@ -17,6 +18,16 @@ from model_manager import (
 )
 
 
+def test_large_v3_uses_native_mlx_catalog_on_apple_silicon():
+    large_v3 = next(model for model in MODEL_CATALOG if model.id == "large-v3")
+
+    if sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
+        assert large_v3.backend == "mlx"
+        assert large_v3.repo_id == "mlx-community/whisper-large-v3-mlx"
+    else:
+        assert large_v3.backend == "faster-whisper"
+
+
 def test_catalog():
     """Test that catalog is correctly defined."""
     print("Testing catalog...")
@@ -28,7 +39,8 @@ def test_catalog():
 
     # Check repo IDs
     for model in MODEL_CATALOG:
-        assert model.repo_id.startswith("Systran/faster-whisper-")
+        assert model.repo_id.startswith(("Systran/faster-whisper-", "mlx-community/whisper-"))
+        assert model.backend in {"faster-whisper", "mlx"}
         assert model.approximate_size_gb > 0
         assert 1 <= model.quality_dots <= 4
 

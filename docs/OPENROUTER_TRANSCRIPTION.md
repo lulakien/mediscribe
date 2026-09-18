@@ -10,12 +10,17 @@ fails.
 
 ## Configure the key safely
 
-The app never accepts an API-key value in Settings and never writes one to
-the MediScribe config file. It stores only the name of the environment
-variable to read at execution time. The default name is
-`OPENROUTER_API_KEY`.
+In the desktop app, paste the key into Settings → Cloud transcription. The
+sandbox stores it in the macOS Keychain under its own service identity and
+stores only provider metadata in `config.json`. The key field is cleared after
+a successful save; a later visit shows only that a key is configured, never the
+credential itself. The in-app Keychain value takes priority over the optional
+environment fallback.
 
-Set the key in the same shell that launches Electron:
+For scripted launches, the app still supports an environment variable. The
+default name is `OPENROUTER_API_KEY`.
+
+Set the key in the same shell that launches Electron when using the fallback:
 
 ```bash
 cd /Users/bzy/mediscribe-lulakien-sandbox
@@ -25,14 +30,16 @@ npm start
 ```
 
 Do not commit the export command, put the key in `config.json`, or paste the
-key into the repository or chat.
+key into the repository or chat. Do not use the environment fallback and the
+Keychain entry for different accounts unless that is intentional.
 
 ## Enable it
 
-In the running app, open Settings → Cloud transcription and enable
-OpenRouter. Choose one of the two Microsoft model IDs and, if needed, change
-the environment-variable name. The Transcribe page then allows a job without
-a locally downloaded Whisper model and shows the selected cloud provider.
+In the running app, open Settings → Cloud transcription, save the key, and
+enable OpenRouter. Choose one of the two Microsoft model IDs and, if needed,
+change the environment-variable name used by scripted launches. The
+Transcribe page then allows a job without a locally downloaded Whisper model
+and shows the selected cloud provider.
 
 The backend also supports an operator-level override for scripted launches:
 
@@ -52,8 +59,9 @@ when the saved gateway setting is enabled.
 - Supported models are `microsoft/mai-transcribe-2` and
   `microsoft/mai-transcribe-1.5`.
 - Request timeout is capped at 60 seconds.
-- The key is read from the named environment variable and is not included in
-  logs, manifests, errors, or persisted settings.
+- The key is read from the sandbox Keychain first, then the named environment
+  variable, and is not included in logs, manifests, errors, or persisted JSON
+  settings.
 - Provider failures are recorded as failed jobs; the app does not silently
   switch providers or send the same audio to local Whisper.
 - Tests use synthetic bytes and a fake HTTP transport. They do not contact

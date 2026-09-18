@@ -164,6 +164,12 @@ export default function Transcribe() {
   }, [settings?.defaultOutputFolder, outputFolder]);
 
   useEffect(() => {
+    if (settings?.defaultModel) {
+      setModel(settings.defaultModel);
+    }
+  }, [settings?.defaultModel]);
+
+  useEffect(() => {
     if (!activeJob) return;
 
     const durationByKey = new Map<string, number>();
@@ -644,7 +650,7 @@ export default function Transcribe() {
               </div>
               {cloudEnabled && (
                 <div className="rounded-button border border-amber-200 bg-amber-50 px-4 py-3 text-small text-text-muted">
-                  Audio will be sent to OpenRouter using {settings?.apiGateway?.api_key_env_var || 'OPENROUTER_API_KEY'}. The real key must be present in the environment before launching the app.
+                  Audio will be sent to OpenRouter using the key saved in this sandbox's macOS Keychain (or the configured environment fallback).
                 </div>
               )}
             </div>

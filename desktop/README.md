@@ -30,8 +30,9 @@ MediScribe Local transcribes medical lectures on your machine using Whisper AI b
 ### macOS / Apple Silicon development
 
 The Linux AppImage and `.deb` targets are not macOS packages. On macOS, use
-the Electron development app; it runs the local Python backend with CPU
-inference and keeps its runtime state separate from other MediScribe versions.
+the Electron development app; on Apple Silicon it can use the native MLX
+Whisper backend for the full-quality `large-v3` model and keeps its runtime
+state separate from other MediScribe versions.
 
 ```bash
 # From the repository root
@@ -58,12 +59,14 @@ npm start
 
 The sandbox backend configuration and Hugging Face cache live below
 `~/Library/Application Support/MediScribe Local Sandbox`. CUDA is reported as
-unavailable on macOS, so choose the CPU-compatible defaults shown by the app.
+unavailable on macOS; the `large-v3` model is routed to MLX when that runtime
+is installed, with CPU as an explicit fallback.
 
 For the optional cloud provider, see
 [`docs/OPENROUTER_TRANSCRIPTION.md`](../docs/OPENROUTER_TRANSCRIPTION.md). The
-API key is supplied through the launch environment, never through the saved
-MediScribe configuration.
+API key is stored in the sandbox's macOS Keychain, with the launch environment
+available as a scripted fallback; neither is written to the saved MediScribe
+configuration.
 
 ### Hardware Recommendations
 
@@ -701,7 +704,7 @@ MediScribe Local is **local-first by design** (per DESIGN.md §12):
 
 - ✓ Local mode keeps transcription on your machine
 - ✓ Audio is uploaded only when OpenRouter cloud mode is explicitly enabled
-- ✓ The OpenRouter key is read from an environment variable and is never persisted
+- ✓ The OpenRouter key is kept in the sandbox Keychain (with an environment fallback) and is never persisted in config
 - ✓ No telemetry, no analytics, no crash reporting
 - ✓ No accounts, no API keys required for local models
 - ✓ Backend binds to `127.0.0.1` only (not accessible from network)

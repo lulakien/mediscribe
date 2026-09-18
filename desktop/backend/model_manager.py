@@ -7,7 +7,9 @@ Implements DESIGN.md §10.3 requirements.
 
 import gc
 import os
+import platform
 import shutil
+import sys
 import subprocess
 import time
 import threading
@@ -21,6 +23,13 @@ from huggingface_hub.errors import HfHubHTTPError
 from faster_whisper import WhisperModel
 
 
+MLX_WHISPER_LARGE_V3_REPO = "mlx-community/whisper-large-v3-mlx"
+
+
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+
+
 # Model catalog per DESIGN.md §10.3
 @dataclass
 class ModelInfo:
@@ -32,18 +41,24 @@ class ModelInfo:
     approximate_size_gb: float  # Approximate size on disk
     quality_dots: int  # Quality rating (1-4 dots)
     relative_speed: str  # "standard", "fast", "faster"
+    backend: str = "faster-whisper"  # "faster-whisper" or "mlx"
 
 
-# Static catalog of supported models
+# Platform-aware catalog of supported models
 MODEL_CATALOG: List[ModelInfo] = [
     ModelInfo(
         id="large-v3",
-        repo_id="Systran/faster-whisper-large-v3",
+        repo_id=MLX_WHISPER_LARGE_V3_REPO if _is_apple_silicon() else "Systran/faster-whisper-large-v3",
         name="large-v3",
-        description="Best quality. The recommended model for lectures.",
+        description=(
+            "Best quality. Native Apple Silicon MLX acceleration is used on this Mac."
+            if _is_apple_silicon()
+            else "Best quality. The recommended model for lectures."
+        ),
         approximate_size_gb=3.1,
         quality_dots=4,
-        relative_speed="standard"
+        relative_speed="standard",
+        backend="mlx" if _is_apple_silicon() else "faster-whisper",
     ),
     ModelInfo(
         id="large-v3-turbo",
@@ -81,6 +96,7 @@ class ModelStatus(str, Enum):
     INSTALLED = "installed"
     DOWNLOADING = "downloading"
     READY_ON_CUDA = "ready_on_cuda"
+    READY_ON_MLX = "ready_on_mlx"
     FAILED_TO_LOAD = "failed_to_load"
 
 
@@ -451,12 +467,23 @@ class ModelManager:
         try:
             start_time = time.time()
 
-            # Instantiate model
-            model = WhisperModel(
-                model_name,
-                device=device,
-                compute_type=compute_type
-            )
+            if state.model_info.backend == "mlx":
+                import mlx.core as mx
+                from mlx_whisper import load_models
+
+                result['device'] = "mlx"
+                result['compute_type'] = "float16"
+                model = load_models.load_model(
+                    state.model_info.repo_id,
+                    dtype=mx.float16,
+                )
+            else:
+                # Instantiate the faster-whisper model.
+                model = WhisperModel(
+                    model_name,
+                    device=device,
+                    compute_type=compute_type
+                )
 
             load_time = time.time() - start_time
 
@@ -472,7 +499,13 @@ class ModelManager:
 
             # Update state
             with self._lock:
-                state.status = ModelStatus.READY_ON_CUDA if device == "cuda" else ModelStatus.INSTALLED
+                state.status = (
+                    ModelStatus.READY_ON_MLX
+                    if state.model_info.backend == "mlx"
+                    else ModelStatus.READY_ON_CUDA
+                    if device == "cuda"
+                    else ModelStatus.INSTALLED
+                )
                 state.last_test_result = result.copy()
 
         except Exception as e:

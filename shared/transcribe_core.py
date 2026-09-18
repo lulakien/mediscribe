@@ -7,9 +7,11 @@ import json
 import logging
 import math
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
@@ -44,6 +46,7 @@ OPENROUTER_SUPPORTED_MODELS = frozenset({
 })
 OPENROUTER_DEFAULT_API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
 OPENROUTER_MAX_TIMEOUT_SECONDS = 60.0
+MLX_WHISPER_LARGE_V3_REPO = "mlx-community/whisper-large-v3-mlx"
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _OPENROUTER_AUDIO_FORMATS = {
     ".flac": "flac",
@@ -327,6 +330,140 @@ class FutureBackendPlaceholder(TranscriptionBackend):
         raise NotImplementedError("This backend is reserved for future implementation.")
 
 
+def should_use_mlx_whisper(options: TranscriptionOptions) -> bool:
+    """Select native MLX for full large-v3 on Apple Silicon when available."""
+    if options.backend != "local_whisper":
+        return False
+    if options.model_name not in {"large-v3", "large-v3-mlx"}:
+        return False
+    if options.device == "cpu":
+        return False
+    if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+        return False
+    try:
+        import mlx_whisper  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+class MLXWhisperBackend(TranscriptionBackend):
+    """Apple Silicon backend using the full-quality MLX Whisper checkpoint."""
+
+    def __init__(self, options: TranscriptionOptions, logger: logging.Logger) -> None:
+        self.options = options
+        self.logger = logger
+        self.module: Any | None = None
+        self.device_used = "mlx"
+        self.compute_type_used = "float16"
+
+    def load_model_or_client(self) -> None:
+        if self.module is not None:
+            return
+        try:
+            import mlx_whisper
+        except ImportError as exc:
+            raise RuntimeError(
+                "MLX Whisper is not installed. Activate the virtual environment and run "
+                "pip install -r requirements.txt."
+            ) from exc
+        if not hasattr(mlx_whisper, "transcribe"):
+            raise RuntimeError("The installed MLX Whisper package does not expose transcribe().")
+        self.module = mlx_whisper
+        self.logger.info(
+            "Using Apple Silicon MLX Whisper model %s.",
+            MLX_WHISPER_LARGE_V3_REPO,
+        )
+
+    def transcribe_file(self, audio_path: Path, options: TranscriptionOptions) -> BackendResult:
+        self.load_model_or_client()
+        assert self.module is not None
+
+        try:
+            response = self.module.transcribe(
+                str(audio_path),
+                path_or_hf_repo=MLX_WHISPER_LARGE_V3_REPO,
+                verbose=None,
+                language=options.language or None,
+                task="transcribe",
+                beam_size=options.beam_size,
+                condition_on_previous_text=options.condition_on_previous_text,
+                initial_prompt=options.initial_prompt or None,
+                temperature=options.temperature,
+                fp16=True,
+            )
+        except Exception as exc:
+            raise RuntimeError("MLX Whisper transcription failed.") from exc
+
+        if not isinstance(response, Mapping):
+            raise RuntimeError("MLX Whisper returned an unexpected transcription response.")
+        text_value = response.get("text")
+        if not isinstance(text_value, str):
+            raise RuntimeError("MLX Whisper returned a transcription response without text.")
+
+        raw_segments = response.get("segments")
+        if raw_segments is not None and not isinstance(raw_segments, list):
+            raise RuntimeError("MLX Whisper returned malformed transcription segments.")
+
+        segments: list[Segment] = []
+        if isinstance(raw_segments, list):
+            for raw_segment in raw_segments:
+                if not isinstance(raw_segment, Mapping):
+                    raise RuntimeError("MLX Whisper returned malformed transcription segments.")
+                start_value = raw_segment.get("start")
+                end_value = raw_segment.get("end")
+                segment_text = raw_segment.get("text")
+                if (
+                    isinstance(start_value, bool)
+                    or not isinstance(start_value, (int, float, str))
+                    or isinstance(end_value, bool)
+                    or not isinstance(end_value, (int, float, str))
+                    or not isinstance(segment_text, str)
+                ):
+                    raise RuntimeError("MLX Whisper returned malformed transcription segments.")
+                try:
+                    start = float(start_value)
+                    end = float(end_value)
+                except (TypeError, ValueError):
+                    raise RuntimeError("MLX Whisper returned malformed transcription segments.") from None
+                if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end < start:
+                    raise RuntimeError("MLX Whisper returned malformed transcription segments.")
+                if segment_text.strip():
+                    segments.append(Segment(start=start, end=end, text=segment_text.strip()))
+
+        duration_value = response.get("duration")
+        duration: float | None = None
+        if duration_value is not None:
+            try:
+                duration = float(duration_value)
+            except (TypeError, ValueError):
+                raise RuntimeError("MLX Whisper returned an invalid transcription duration.") from None
+            if not math.isfinite(duration) or duration < 0:
+                raise RuntimeError("MLX Whisper returned an invalid transcription duration.")
+        elif segments:
+            duration = max(segment.end for segment in segments)
+
+        detected_language = response.get("language")
+        if not isinstance(detected_language, str) or not detected_language.strip():
+            detected_language = None
+        warnings = [
+            "Using Apple Silicon MLX Whisper with the full large-v3 checkpoint.",
+        ]
+        if options.vad_filter:
+            warnings.append("MLX Whisper does not use faster-whisper's VAD filter; native decoding was used.")
+
+        return BackendResult(
+            segments=segments or [Segment(start=0.0, end=duration or 0.0, text=text_value.strip())],
+            model_name=options.model_name,
+            language=detected_language or options.language,
+            device_used=self.device_used,
+            compute_type_used=self.compute_type_used,
+            duration_seconds=duration,
+            detected_language=detected_language,
+            warnings=warnings,
+        )
+
+
 class LocalWhisperBackend(TranscriptionBackend):
     def __init__(self, options: TranscriptionOptions, logger: logging.Logger) -> None:
         self.options = options
@@ -419,6 +556,25 @@ class LocalWhisperBackend(TranscriptionBackend):
         )
 
 
+def _load_openrouter_api_key(key_env_name: str) -> str:
+    """Read the sandbox credential without ever serializing it into a job."""
+    # The in-app Keychain value is authoritative for this sandbox. A
+    # deliberately configured process environment remains supported as the
+    # fallback for scripted launches and backwards compatibility.
+    try:
+        from keychain import OpenRouterKeyStore
+
+        keychain_value = OpenRouterKeyStore().get()
+        if keychain_value:
+            return keychain_value
+    except Exception:
+        # Missing optional desktop Keychain support is reported by the caller
+        # as a missing credential; no platform or backend exception is leaked.
+        pass
+
+    return os.environ.get(key_env_name, "").strip()
+
+
 class OpenRouterTranscriptionBackend(TranscriptionBackend):
     """Explicit opt-in adapter for OpenRouter's documented STT endpoint."""
 
@@ -449,10 +605,10 @@ class OpenRouterTranscriptionBackend(TranscriptionBackend):
         key_env_name = _validate_environment_variable_name(
             self.options.api_key_env_var or OPENROUTER_DEFAULT_API_KEY_ENV_VAR
         )
-        api_key = os.environ.get(key_env_name, "").strip()
+        api_key = _load_openrouter_api_key(key_env_name)
         if not api_key:
             raise RuntimeError(
-                "OpenRouter transcription is enabled but the configured API-key environment variable is not set."
+                "OpenRouter transcription is enabled but no API key is available in the configured environment variable or this sandbox's macOS Keychain."
             )
 
         self._endpoint_url = endpoint_url
@@ -609,6 +765,8 @@ def create_transcription_backend(
 ) -> TranscriptionBackend:
     """Create the selected backend while keeping unsupported choices explicit."""
     if options.backend == "local_whisper":
+        if should_use_mlx_whisper(options):
+            return MLXWhisperBackend(options, logger)
         return LocalWhisperBackend(options, logger)
     if options.backend == OPENROUTER_TRANSCRIBE_BACKEND:
         return OpenRouterTranscriptionBackend(options, logger, transport=transport)

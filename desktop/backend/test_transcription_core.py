@@ -8,6 +8,7 @@ import logging
 import sys
 from http.client import HTTPMessage
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -118,6 +119,26 @@ def test_missing_key_fails_before_transport_is_called(monkeypatch):
         backend.load_model_or_client()
 
     assert transport.calls == []
+
+
+def test_openrouter_keychain_fallback_is_used_when_environment_is_empty(monkeypatch):
+    class FakeStore:
+        def get(self):
+            return "sk-or-v1-synthetic-keychain-key"
+
+    key_env_name = "MEDISCRIBE_TEST_OPENROUTER_KEYCHAIN_FALLBACK"
+    monkeypatch.setenv(key_env_name, "synthetic-environment-key")
+    monkeypatch.setitem(sys.modules, "keychain", SimpleNamespace(OpenRouterKeyStore=FakeStore))
+    options = TranscriptionOptions(
+        backend=OPENROUTER_TRANSCRIBE_BACKEND,
+        model_name=OPENROUTER_DEFAULT_MODEL,
+        api_key_env_var=key_env_name,
+    )
+
+    backend = OpenRouterTranscriptionBackend(options, logging.getLogger("test-openrouter"))
+    backend.load_model_or_client()
+
+    assert backend._api_key == "sk-or-v1-synthetic-keychain-key"
 
 
 def test_mai_transcribe_two_request_and_segment_mapping(tmp_path: Path, monkeypatch):

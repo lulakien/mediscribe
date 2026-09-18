@@ -43,6 +43,7 @@ add_shared_to_path()
 
 # Import managers
 from config_manager import get_config_manager
+from keychain import OpenRouterKeyStore, SecretStoreError
 from file_manager import (
     FileInspectRequest,
     FileInspectResponse,
@@ -78,6 +79,7 @@ class HealthResponse(BaseModel):
     timestamp: str
     cuda_available: bool = False
     cuda_device: Optional[str] = None
+    mlx_available: bool = False
     ffmpeg_available: bool = False
     ffmpeg_path: Optional[str] = None
     ffprobe_available: bool = False
@@ -92,6 +94,12 @@ class HealthResponse(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     """Request to update settings (partial)."""
     updates: Dict[str, Any]
+
+
+class OpenRouterKeyRequest(BaseModel):
+    """Request to replace or clear the sandbox's OpenRouter credential."""
+
+    api_key: str
 
 
 class JobCreateRequest(BaseModel):
@@ -217,6 +225,7 @@ async def health_check():
     """
     config = get_config_manager().get()
     cuda_available, cuda_device = detect_cuda_status()
+    mlx_available = detect_mlx_status()
     ffmpeg_status = detect_ffmpeg_status()
 
     return HealthResponse(
@@ -225,6 +234,7 @@ async def health_check():
         timestamp=utc_now_iso(),
         cuda_available=cuda_available,
         cuda_device=cuda_device,
+        mlx_available=mlx_available,
         **ffmpeg_status,
         python_version=platform.python_version(),
         python_executable=sys.executable,
@@ -255,6 +265,18 @@ def detect_cuda_status() -> tuple[bool, Optional[str]]:
         return True, device_name or None
     except Exception:
         return True, None
+
+
+def detect_mlx_status() -> bool:
+    """Return whether the native MLX Whisper runtime is usable on this host."""
+    if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+        return False
+    try:
+        import mlx_whisper
+
+        return callable(getattr(mlx_whisper, "transcribe", None))
+    except Exception:
+        return False
 
 
 def detect_ffmpeg_status() -> dict[str, Any]:
@@ -316,6 +338,29 @@ async def update_settings(request: SettingsUpdateRequest):
         return updated
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/settings/openrouter-key", dependencies=[Depends(verify_token)])
+async def get_openrouter_key_status():
+    """Return only whether this sandbox has a Keychain credential."""
+    try:
+        return {"configured": OpenRouterKeyStore().is_configured()}
+    except SecretStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+
+@app.put("/settings/openrouter-key", dependencies=[Depends(verify_token)])
+async def update_openrouter_key(request: OpenRouterKeyRequest):
+    """Save or clear the OpenRouter credential without writing it to JSON."""
+    try:
+        store = OpenRouterKeyStore()
+        if request.api_key.strip():
+            store.set(request.api_key)
+        else:
+            store.delete()
+        return {"configured": store.is_configured()}
+    except SecretStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 # --- File Endpoints ---
@@ -924,6 +969,7 @@ async def websocket_events(websocket: WebSocket):
         })
         config = get_config_manager().get()
         cuda_available, cuda_device = detect_cuda_status()
+        mlx_available = detect_mlx_status()
         await websocket.send_json({
             "type": "backend_status",
             "timestamp": utc_now_iso(),
@@ -931,6 +977,7 @@ async def websocket_events(websocket: WebSocket):
                 "status": "running",
                 "cuda_available": cuda_available,
                 "cuda_device": cuda_device,
+                "mlx_available": mlx_available,
                 "default_model": config.get("defaultModel", "large-v3"),
                 "version": APP_VERSION,
             },

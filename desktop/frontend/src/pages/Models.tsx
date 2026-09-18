@@ -30,7 +30,7 @@ const MODEL_CATALOG = [
   {
     id: 'large-v3',
     name: 'large-v3',
-    description: 'Best quality. The recommended model for lectures.',
+    description: 'Best quality. Uses native Apple Silicon MLX acceleration on this Mac.',
     size: '~3.1 GB',
     quality: 4,
     speed: 2,
@@ -87,6 +87,7 @@ function ModelCard({
   isTesting,
 }: ModelCardProps) {
   const isInstalled = modelData?.loaded || false;
+  const acceleratorName = modelData?.backend === 'mlx' ? 'Apple GPU (MLX)' : 'CUDA';
   const getStatusBadge = () => {
     if (isDownloading) {
       return <Badge variant="downloading" pulse>Downloading</Badge>;
@@ -95,7 +96,7 @@ function ModelCard({
       return <Badge variant="downloading" pulse>Downloading</Badge>;
     }
     if (isTesting) {
-      return <Badge variant="running" pulse>Testing on CUDA</Badge>;
+      return <Badge variant="running" pulse>Testing on {acceleratorName}</Badge>;
     }
     if (isInstalled) {
       return <Badge variant="installed">Installed</Badge>;
@@ -170,7 +171,7 @@ function ModelCard({
         {isTesting && (
           <div className="flex items-center gap-2 text-small text-text-muted">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Loading model onto CUDA...</span>
+            <span>Loading model onto {acceleratorName}...</span>
           </div>
         )}
       </CardContent>
@@ -201,7 +202,7 @@ function ModelCard({
                   Testing...
                 </>
               ) : (
-                'Test on CUDA'
+                `Test on ${acceleratorName}`
               )}
             </Button>
 

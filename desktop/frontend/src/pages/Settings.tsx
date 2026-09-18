@@ -14,7 +14,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useSettings, useUpdateSettings, useModels } from "@/api/hooks";
+import {
+  useOpenRouterKeyStatus,
+  useSaveOpenRouterKey,
+  useSettings,
+  useUpdateSettings,
+  useModels,
+} from "@/api/hooks";
 import { cn } from "@/lib/utils";
 import type { ApiGatewaySettings, Config, ThemeOption } from "@/types";
 
@@ -33,11 +39,14 @@ export default function Settings() {
   const { data: settings, isLoading } = useSettings();
   const { data: models } = useModels();
   const updateSettings = useUpdateSettings();
+  const { data: openRouterKeyStatus, isLoading: isLoadingOpenRouterKeyStatus } = useOpenRouterKeyStatus();
+  const saveOpenRouterKey = useSaveOpenRouterKey();
 
   const [savedStates, setSavedStates] = useState<Record<string, boolean>>({});
   const [backendCollapsed, setBackendCollapsed] = useState(true);
   const [openRouterModel, setOpenRouterModel] = useState<string>(OPENROUTER_DEFAULT_MODEL);
   const [openRouterKeyEnv, setOpenRouterKeyEnv] = useState(OPENROUTER_DEFAULT_KEY_ENV);
+  const [openRouterApiKey, setOpenRouterApiKey] = useState("");
 
   // Show "Saved ✓" feedback for 2 seconds after save
   const showSavedFeedback = (key: string) => {
@@ -82,6 +91,27 @@ export default function Settings() {
       timeout_seconds: current.timeout_seconds || 60,
     };
     await handleSettingChange("apiGateway", next);
+  };
+
+  const handleOpenRouterKeySave = async (value = openRouterApiKey) => {
+    if (!value.trim()) return;
+    try {
+      await saveOpenRouterKey.mutateAsync(value.trim());
+      setOpenRouterApiKey("");
+      showSavedFeedback("openRouterApiKey");
+    } catch (error) {
+      console.error("Failed to save OpenRouter API key:", error);
+    }
+  };
+
+  const handleOpenRouterKeyClear = async () => {
+    try {
+      await saveOpenRouterKey.mutateAsync("");
+      setOpenRouterApiKey("");
+      showSavedFeedback("openRouterApiKey");
+    } catch (error) {
+      console.error("Failed to remove OpenRouter API key:", error);
+    }
   };
 
   // Handler for folder picker using Electron API
@@ -471,7 +501,59 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="openrouter-key-env">API key environment variable</Label>
+              <Label htmlFor="openrouter-api-key">OpenRouter API key</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="openrouter-api-key"
+                  type="password"
+                  value={openRouterApiKey}
+                  onChange={(event) => setOpenRouterApiKey(event.target.value)}
+                  onBlur={() => void handleOpenRouterKeySave()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleOpenRouterKeySave();
+                    }
+                  }}
+                  className="font-mono text-small"
+                  placeholder={openRouterKeyStatus?.configured ? "Stored in this Mac's Keychain" : "Paste a new key"}
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={isLoadingOpenRouterKeyStatus || saveOpenRouterKey.isPending}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => void handleOpenRouterKeySave()}
+                  disabled={!openRouterApiKey.trim() || saveOpenRouterKey.isPending}
+                >
+                  Save key
+                </Button>
+              </div>
+              <p className="text-small text-text-muted">
+                {openRouterKeyStatus?.configured
+                  ? "A key is saved in this sandbox's macOS Keychain. Enter a new key to replace it."
+                  : "The key is saved only in this sandbox's macOS Keychain, never in the JSON settings file."}
+              </p>
+              {saveOpenRouterKey.isError && (
+                <p className="text-small text-error">{saveOpenRouterKey.error.message}</p>
+              )}
+              {openRouterKeyStatus?.configured && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="compact"
+                  onClick={() => void handleOpenRouterKeyClear()}
+                  disabled={saveOpenRouterKey.isPending}
+                >
+                  Remove stored key
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="openrouter-key-env">Environment variable fallback</Label>
               <Input
                 id="openrouter-key-env"
                 value={openRouterKeyEnv}
@@ -481,7 +563,7 @@ export default function Settings() {
                 spellCheck={false}
               />
               <p className="text-small text-text-muted">
-                Only this variable name is saved. Put the real key in that variable before launching the app; the key is never stored by MediScribe.
+                Optional fallback for command-line launches. The in-app key above takes priority when it is saved.
               </p>
             </div>
           </div>
@@ -505,7 +587,7 @@ export default function Settings() {
             <strong>Local mode is the default.</strong> Audio stays on this computer unless you explicitly enable OpenRouter cloud transcription.
           </p>
           <p className="text-body text-text-muted">
-            In cloud mode, the prepared audio is sent to OpenRouter for Microsoft transcription. The API key is read from the configured environment variable and is not persisted in settings, logs, or transcript artifacts.
+            In cloud mode, the prepared audio is sent to OpenRouter for Microsoft transcription. The API key is kept in this sandbox's macOS Keychain and is not persisted in settings, logs, or transcript artifacts.
           </p>
           <Button
             variant="ghost"

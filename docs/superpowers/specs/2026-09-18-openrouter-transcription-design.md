@@ -54,10 +54,11 @@ Cloud execution is opt-in through either of these paths:
 2. A process-level override: `MEDISCRIBE_TRANSCRIPTION_BACKEND` must be
    `openrouter_transcribe` (or `local_whisper` to force local mode).
 
-The API key is never a configuration value. `apiGateway.api_key_env_var`
+The API key is never a JSON configuration value. `apiGateway.api_key_env_var`
 contains only the name of an environment variable, defaulting to
-`OPENROUTER_API_KEY`; the adapter reads the value at execution time and never
-includes it in logs, manifests, errors, or persisted configuration. A
+`OPENROUTER_API_KEY`; the desktop sandbox may also keep the key in its
+separate macOS Keychain service. The adapter reads the value at execution time
+and never includes it in logs, manifests, errors, or persisted configuration. A
 configured endpoint must be the canonical OpenRouter endpoint; arbitrary URLs
 are rejected so that enabling the feature cannot silently redirect audio.
 

@@ -42,9 +42,10 @@ mediscribe/
 ### macOS sandbox (development)
 
 The older `lulakien/mediscribe` checkout can run on macOS, including Apple
-Silicon. The development app uses the local Whisper backend and falls back to
-CPU because CUDA is not available on macOS. The sandbox keeps its backend
-configuration and Hugging Face model cache under
+Silicon. On an Apple Silicon Mac with the MLX runtime installed, the full
+quality `large-v3` model uses `mlx-community/whisper-large-v3-mlx`; otherwise
+the existing faster-whisper path remains available. The sandbox keeps its
+backend configuration and Hugging Face model cache under
 `~/Library/Application Support/MediScribe Local Sandbox`, separate from any
 other MediScribe installation.
 
@@ -75,7 +76,9 @@ npm start
 Electron starts the backend from `desktop/backend/.venv`; a separate backend
 terminal is not required for this development flow. Choose an output folder in
 Settings before starting a transcription. Whisper models are downloaded only
-when requested and stay in the sandbox model cache.
+when requested and stay in the sandbox model cache. The full MLX `large-v3`
+checkpoint is intentionally not downloaded by the initial setup; use Models →
+`large-v3` when you are ready for that download.
 
 ### Daily launch
 
@@ -145,7 +148,7 @@ Output: `electron/dist-packaged/` (AppImage + .deb). After installing the `.deb`
 
 | Model | Size | Speed | Quality |
 |-------|------|-------|---------|
-| `large-v3` | ~3.1 GB | Baseline | Best |
+| `large-v3` | ~3.1 GB | MLX on Apple Silicon | Best |
 | `large-v3-turbo` | ~1.6 GB | Faster | Near-best |
 | `medium` | ~1.5 GB | Fast | Good |
 | `small` | ~0.5 GB | Fastest | Draft-quality |
@@ -158,7 +161,8 @@ normal Hugging Face cache unless `HF_HOME` is set.
 
 - Local mode keeps transcription on your machine
 - OpenRouter mode is opt-in and sends prepared audio to the configured provider
-- The OpenRouter API key is read from an environment variable and never persisted
+- The OpenRouter API key is stored in this sandbox's macOS Keychain (or read from
+  the environment fallback) and never persisted in `config.json`
 - No telemetry, no analytics, no crash reporting
 - Backend binds to `127.0.0.1` only
 
