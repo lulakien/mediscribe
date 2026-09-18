@@ -50,6 +50,21 @@ class CapturingTransport:
         return FakeResponse(self.payload)
 
 
+@pytest.fixture(autouse=True)
+def isolate_real_macos_keychain(monkeypatch):
+    """Keep real user credentials from changing environment-key tests."""
+
+    class EmptyKeyStore:
+        def get(self):
+            return None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "keychain",
+        SimpleNamespace(OpenRouterKeyStore=EmptyKeyStore),
+    )
+
+
 def test_default_options_stay_local_even_when_gateway_is_disabled():
     options = resolve_transcription_options(
         TranscriptionOptions(),
