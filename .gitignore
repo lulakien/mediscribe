@@ -62,3 +62,9 @@ hf-cache/
 transcripts/
 manifests/
 temp/
+
+# Local sandbox media workspace; never commit recordings, archives, or its manifest
+media/inbox/
+media/archive/
+media/transcripts/
+media/manifest.json
