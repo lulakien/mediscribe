@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import ssl
 import sys
 from http.client import HTTPMessage
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "shared"))
 
+import transcribe_core
 from transcribe_core import (
     OPENROUTER_DEFAULT_MODEL,
     OPENROUTER_TRANSCRIPTION_URL,
@@ -154,6 +156,32 @@ def test_openrouter_keychain_fallback_is_used_when_environment_is_empty(monkeypa
     backend.load_model_or_client()
 
     assert backend._api_key == "sk-or-v1-synthetic-keychain-key"
+
+
+def test_default_openrouter_transport_uses_verified_ssl_context(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("MEDISCRIBE_TEST_OPENROUTER_KEY", "synthetic-test-key")
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request, timeout, context=None):
+        captured["context"] = context
+        return FakeResponse({"text": "test", "language": "tr"})
+
+    monkeypatch.setattr(transcribe_core, "urlopen", fake_urlopen)
+    options = TranscriptionOptions(
+        backend=OPENROUTER_TRANSCRIBE_BACKEND,
+        model_name=OPENROUTER_DEFAULT_MODEL,
+        api_key_env_var="MEDISCRIBE_TEST_OPENROUTER_KEY",
+    )
+
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"synthetic audio")
+    backend = OpenRouterTranscriptionBackend(options, logging.getLogger("test-openrouter"))
+    backend.transcribe_file(audio_path, options)
+
+    context = captured["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
 
 
 def test_mai_transcribe_two_request_and_segment_mapping(tmp_path: Path, monkeypatch):

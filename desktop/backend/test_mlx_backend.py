@@ -58,8 +58,9 @@ def test_large_v3_uses_mlx_on_apple_silicon(monkeypatch: pytest.MonkeyPatch, tmp
     ]
     assert calls[0]["path_or_hf_repo"] == transcribe_core.MLX_WHISPER_LARGE_V3_REPO
     assert calls[0]["language"] == "tr"
-    assert calls[0]["beam_size"] == 5
+    assert "beam_size" not in calls[0]
     assert calls[0]["fp16"] is True
+    assert any("beam search" in warning.lower() for warning in result.warnings)
 
 
 def test_cpu_request_keeps_faster_whisper_path_on_apple_silicon(monkeypatch: pytest.MonkeyPatch):

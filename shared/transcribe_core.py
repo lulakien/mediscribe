@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,17 @@ _OPENROUTER_AUDIO_FORMATS = {
     ".wav": "wav",
     ".webm": "webm",
 }
+
+
+def _openrouter_urlopen(request: Request, timeout: float):
+    """Open provider requests with the bundled CA trust store on macOS."""
+    try:
+        import certifi
+
+        context = ssl.create_default_context(cafile=certifi.where())
+    except (ImportError, OSError):
+        context = ssl.create_default_context()
+    return urlopen(request, timeout=timeout, context=context)
 
 BACKEND_CHOICES = [
     "local_whisper",
@@ -380,13 +392,14 @@ class MLXWhisperBackend(TranscriptionBackend):
         assert self.module is not None
 
         try:
+            # mlx-whisper currently exposes greedy decoding only; even
+            # beam_size=1 is treated as beam search, so omit the option.
             response = self.module.transcribe(
                 str(audio_path),
                 path_or_hf_repo=MLX_WHISPER_LARGE_V3_REPO,
                 verbose=None,
                 language=options.language or None,
                 task="transcribe",
-                beam_size=options.beam_size,
                 condition_on_previous_text=options.condition_on_previous_text,
                 initial_prompt=options.initial_prompt or None,
                 temperature=options.temperature,
@@ -449,6 +462,10 @@ class MLXWhisperBackend(TranscriptionBackend):
         warnings = [
             "Using Apple Silicon MLX Whisper with the full large-v3 checkpoint.",
         ]
+        if options.beam_size != 1:
+            warnings.append(
+                "MLX Whisper does not implement beam search; used greedy decoding with beam_size=1."
+            )
         if options.vad_filter:
             warnings.append("MLX Whisper does not use faster-whisper's VAD filter; native decoding was used.")
 
@@ -586,7 +603,7 @@ class OpenRouterTranscriptionBackend(TranscriptionBackend):
     ) -> None:
         self.options = options
         self.logger = logger
-        self.transport = transport or urlopen
+        self.transport = transport or _openrouter_urlopen
         self.device_used = "remote"
         self.compute_type_used = "api"
         self._api_key: str | None = None
