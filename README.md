@@ -1,6 +1,6 @@
 # MediScribe Local
 
-Local-first transcription studio for Turkish medical lectures. Drop in audio files, get study-ready transcripts — all on your own GPU, nothing leaves your machine.
+Local-first transcription studio for Turkish medical lectures. Drop in audio files and get study-ready transcripts locally by default, with an explicit optional OpenRouter path for Microsoft transcription.
 
 ## What it does
 
@@ -33,11 +33,49 @@ mediscribe/
 
 ### Prerequisites
 
-- Ubuntu 22.04+ (or compatible Linux)
+- Linux (Ubuntu 22.04+ or compatible) for the packaged release, or macOS for development
 - Python 3.10+
 - Node.js 18+
-- ffmpeg (`sudo apt install ffmpeg`)
+- ffmpeg (`sudo apt install ffmpeg` on Ubuntu, or `brew install ffmpeg` on macOS)
 - NVIDIA GPU with CUDA (optional, for acceleration)
+
+### macOS sandbox (development)
+
+The older `lulakien/mediscribe` checkout can run on macOS, including Apple
+Silicon. The development app uses the local Whisper backend and falls back to
+CPU because CUDA is not available on macOS. The sandbox keeps its backend
+configuration and Hugging Face model cache under
+`~/Library/Application Support/MediScribe Local Sandbox`, separate from any
+other MediScribe installation.
+
+From the repository root:
+
+```bash
+brew install ffmpeg
+python3 -m venv desktop/backend/.venv
+desktop/backend/.venv/bin/python -m pip install -r desktop/backend/requirements.txt
+
+cd desktop
+npm ci
+npm run build:all
+```
+
+For development, start the Vite renderer and Electron in two terminals:
+
+```bash
+# Terminal 1
+cd desktop
+npm run dev:frontend
+
+# Terminal 2
+cd desktop
+npm start
+```
+
+Electron starts the backend from `desktop/backend/.venv`; a separate backend
+terminal is not required for this development flow. Choose an output folder in
+Settings before starting a transcription. Whisper models are downloaded only
+when requested and stay in the sandbox model cache.
 
 ### Daily launch
 
@@ -96,7 +134,7 @@ Output: `electron/dist-packaged/` (AppImage + .deb). After installing the `.deb`
 
 ## Key features
 
-- **Local-first** — audio never leaves your machine, no accounts or API keys
+- **Local-first** — audio stays on your machine by default; optional cloud mode is explicit
 - **GPU-accelerated** — CUDA with automatic CPU fallback
 - **Batch processing** — multiple files with smart presets (Best Quality, Bad Audio, Fast Batch, Low VRAM)
 - **Model management** — download, test, and manage Whisper models from the UI
@@ -112,13 +150,15 @@ Output: `electron/dist-packaged/` (AppImage + .deb). After installing the `.deb`
 | `medium` | ~1.5 GB | Fast | Good |
 | `small` | ~0.5 GB | Fastest | Draft-quality |
 
-Models are downloaded from Hugging Face on first use to `~/.cache/huggingface/hub/`.
+Models are downloaded from Hugging Face on first use. Electron sandbox launches keep them under
+`~/Library/Application Support/MediScribe Local Sandbox/huggingface/`; direct backend runs use the
+normal Hugging Face cache unless `HF_HOME` is set.
 
 ## Privacy
 
-- All transcription runs locally on your machine
-- Audio files are never uploaded
-- Network is used only for downloading Whisper models
+- Local mode keeps transcription on your machine
+- OpenRouter mode is opt-in and sends prepared audio to the configured provider
+- The OpenRouter API key is read from an environment variable and never persisted
 - No telemetry, no analytics, no crash reporting
 - Backend binds to `127.0.0.1` only
 
@@ -127,6 +167,7 @@ Models are downloaded from Hugging Face on first use to `~/.cache/huggingface/hu
 - **[DESIGN.md](DESIGN.md)** — full product and architecture specification
 - **[desktop/README.md](desktop/README.md)** — desktop app setup, build, and troubleshooting
 - **[docs/QUICK_START.md](docs/QUICK_START.md)** — development setup guide
+- **[docs/OPENROUTER_TRANSCRIPTION.md](docs/OPENROUTER_TRANSCRIPTION.md)** — optional Microsoft/OpenRouter setup and privacy boundary
 - **[prototype_gradio/README.md](prototype_gradio/README.md)** — Gradio prototype usage
 
 ## License

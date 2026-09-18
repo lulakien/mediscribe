@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import base64
 import hashlib
 import json
 import logging
@@ -12,10 +13,12 @@ import subprocess
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping, cast
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -32,8 +35,30 @@ AUDIO_EXTENSIONS = {
     ".webm",
 }
 
+OPENROUTER_TRANSCRIBE_BACKEND = "openrouter_transcribe"
+OPENROUTER_TRANSCRIPTION_URL = "https://openrouter.ai/api/v1/audio/transcriptions"
+OPENROUTER_DEFAULT_MODEL = "microsoft/mai-transcribe-2"
+OPENROUTER_SUPPORTED_MODELS = frozenset({
+    "microsoft/mai-transcribe-1.5",
+    "microsoft/mai-transcribe-2",
+})
+OPENROUTER_DEFAULT_API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
+OPENROUTER_MAX_TIMEOUT_SECONDS = 60.0
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_OPENROUTER_AUDIO_FORMATS = {
+    ".flac": "flac",
+    ".m4a": "m4a",
+    ".mp3": "mp3",
+    ".mpga": "mpga",
+    ".mpeg": "mpeg",
+    ".ogg": "ogg",
+    ".wav": "wav",
+    ".webm": "webm",
+}
+
 BACKEND_CHOICES = [
     "local_whisper",
+    OPENROUTER_TRANSCRIBE_BACKEND,
     "openai_transcribe",
     "google_speech",
     "deepgram",
@@ -54,6 +79,112 @@ class TranscriptionOptions:
     condition_on_previous_text: bool = False
     temperature: float = 0.0
     initial_prompt: str = ""
+    endpoint_url: str = OPENROUTER_TRANSCRIPTION_URL
+    api_key_env_var: str = OPENROUTER_DEFAULT_API_KEY_ENV_VAR
+    timeout_seconds: float = OPENROUTER_MAX_TIMEOUT_SECONDS
+
+
+def _validate_environment_variable_name(value: str) -> str:
+    name = str(value).strip()
+    if not _ENV_VAR_NAME_RE.fullmatch(name):
+        raise ValueError("The API-key environment-variable name is invalid.")
+    return name
+
+
+def _gateway_config(config: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not config:
+        return {}
+    gateway = config.get("apiGateway")
+    if gateway is None:
+        gateway = config.get("api_gateway")
+    if gateway is None:
+        return {}
+    if not isinstance(gateway, Mapping):
+        raise ValueError("apiGateway must be an object.")
+    return gateway
+
+
+def _cloud_model_name(value: Any) -> str:
+    model_name = str(value or "").strip()
+    if not model_name or model_name == "large-v3":
+        return OPENROUTER_DEFAULT_MODEL
+    if model_name not in OPENROUTER_SUPPORTED_MODELS:
+        raise ValueError("Unsupported OpenRouter transcription model.")
+    return model_name
+
+
+def _cloud_timeout_seconds(value: Any) -> float:
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OpenRouter timeout must be a positive number.") from exc
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("OpenRouter timeout must be a positive number.")
+    return min(timeout, OPENROUTER_MAX_TIMEOUT_SECONDS)
+
+
+def resolve_transcription_options(
+    options: TranscriptionOptions,
+    config: Mapping[str, Any] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> TranscriptionOptions:
+    """Resolve an explicit provider choice without reading or storing a key.
+
+    Local Whisper remains the default. The process-level backend override wins
+    over the desktop gateway setting, which lets an operator force local mode
+    even when a gateway is configured.
+    """
+    env = os.environ if environ is None else environ
+    gateway = _gateway_config(config)
+    env_backend = str(env.get("MEDISCRIBE_TRANSCRIPTION_BACKEND", "")).strip()
+    if env_backend and env_backend not in {"local_whisper", OPENROUTER_TRANSCRIBE_BACKEND}:
+        raise ValueError("Unsupported transcription backend override.")
+
+    gateway_enabled = gateway.get("enabled") is True
+    gateway_provider = gateway.get("provider")
+    if gateway_enabled and gateway_provider != "openrouter":
+        raise ValueError("Enabled apiGateway must select the openrouter provider.")
+
+    cloud_requested = (
+        env_backend == OPENROUTER_TRANSCRIBE_BACKEND
+        or (not env_backend and options.backend == OPENROUTER_TRANSCRIBE_BACKEND)
+        or (not env_backend and gateway_enabled)
+    )
+    if not cloud_requested:
+        if env_backend == "local_whisper":
+            return replace(options, backend="local_whisper")
+        return options
+
+    endpoint = gateway.get("endpoint_url") or options.endpoint_url or OPENROUTER_TRANSCRIPTION_URL
+    if endpoint != OPENROUTER_TRANSCRIPTION_URL:
+        raise ValueError("OpenRouter endpoint is not the canonical transcription endpoint.")
+
+    env_model = str(env.get("MEDISCRIBE_OPENROUTER_MODEL", "")).strip()
+    configured_model = gateway.get("model_name")
+    option_model = options.model_name if options.model_name != "large-v3" else None
+    model_name = _cloud_model_name(env_model or configured_model or option_model)
+
+    configured_key_env = gateway.get("api_key_env_var")
+    key_env_name = _validate_environment_variable_name(
+        str(
+            env.get("MEDISCRIBE_OPENROUTER_API_KEY_ENV")
+            or configured_key_env
+            or options.api_key_env_var
+            or OPENROUTER_DEFAULT_API_KEY_ENV_VAR
+        )
+    )
+
+    timeout_value = gateway.get("timeout_seconds", options.timeout_seconds)
+    return replace(
+        options,
+        backend=OPENROUTER_TRANSCRIBE_BACKEND,
+        model_name=model_name,
+        device="remote",
+        compute_type="api",
+        endpoint_url=OPENROUTER_TRANSCRIPTION_URL,
+        api_key_env_var=key_env_name,
+        timeout_seconds=_cloud_timeout_seconds(timeout_value),
+    )
 
 
 @dataclass
@@ -288,6 +419,202 @@ class LocalWhisperBackend(TranscriptionBackend):
         )
 
 
+class OpenRouterTranscriptionBackend(TranscriptionBackend):
+    """Explicit opt-in adapter for OpenRouter's documented STT endpoint."""
+
+    def __init__(
+        self,
+        options: TranscriptionOptions,
+        logger: logging.Logger,
+        transport: Callable[..., Any] | None = None,
+    ) -> None:
+        self.options = options
+        self.logger = logger
+        self.transport = transport or urlopen
+        self.device_used = "remote"
+        self.compute_type_used = "api"
+        self._api_key: str | None = None
+        self._model_name = OPENROUTER_DEFAULT_MODEL
+        self._endpoint_url = OPENROUTER_TRANSCRIPTION_URL
+
+    def load_model_or_client(self) -> None:
+        if self._api_key is not None:
+            return
+
+        endpoint_url = self.options.endpoint_url or OPENROUTER_TRANSCRIPTION_URL
+        if endpoint_url != OPENROUTER_TRANSCRIPTION_URL:
+            raise RuntimeError("OpenRouter endpoint is not the canonical transcription endpoint.")
+
+        self._model_name = _cloud_model_name(self.options.model_name)
+        key_env_name = _validate_environment_variable_name(
+            self.options.api_key_env_var or OPENROUTER_DEFAULT_API_KEY_ENV_VAR
+        )
+        api_key = os.environ.get(key_env_name, "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "OpenRouter transcription is enabled but the configured API-key environment variable is not set."
+            )
+
+        self._endpoint_url = endpoint_url
+        self._api_key = api_key
+        self.logger.info("OpenRouter transcription enabled for model %s.", self._model_name)
+
+    def transcribe_file(self, audio_path: Path, options: TranscriptionOptions) -> BackendResult:
+        self.load_model_or_client()
+        assert self._api_key is not None
+
+        audio_format = _OPENROUTER_AUDIO_FORMATS.get(audio_path.suffix.lower())
+        if audio_format is None:
+            raise RuntimeError("OpenRouter transcription does not support this audio format directly.")
+
+        try:
+            audio_data = base64.b64encode(audio_path.read_bytes()).decode("ascii")
+        except OSError as exc:
+            raise RuntimeError("The audio file could not be read for OpenRouter transcription.") from exc
+
+        model_name = _cloud_model_name(options.model_name or self._model_name)
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "input_audio": {
+                "data": audio_data,
+                "format": audio_format,
+            },
+        }
+        if options.language and options.language.lower() not in {"auto", "automatic"}:
+            payload["language"] = options.language
+        if model_name == "microsoft/mai-transcribe-2":
+            payload["response_format"] = "verbose_json"
+            payload["timestamp_granularities"] = ["segment"]
+
+        request = Request(
+            self._endpoint_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with self.transport(request, timeout=_cloud_timeout_seconds(self.options.timeout_seconds)) as response:
+                status = getattr(response, "status", None)
+                if status is not None and int(status) >= 400:
+                    raise RuntimeError(f"OpenRouter transcription request failed with HTTP status {int(status)}.")
+                response_bytes = response.read()
+        except HTTPError as exc:
+            status = getattr(exc, "code", "unknown")
+            raise RuntimeError(
+                f"OpenRouter transcription request failed with HTTP status {status}."
+            ) from None
+        except (URLError, TimeoutError, OSError):
+            raise RuntimeError(
+                "OpenRouter transcription request failed before a response was received."
+            ) from None
+        except RuntimeError:
+            raise
+
+        try:
+            response_data = json.loads(response_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise RuntimeError("OpenRouter returned an invalid JSON response.") from None
+
+        return _backend_result_from_openrouter_response(response_data, options, model_name)
+
+
+def _backend_result_from_openrouter_response(
+    response_data: Any,
+    options: TranscriptionOptions,
+    model_name: str,
+) -> BackendResult:
+    if not isinstance(response_data, Mapping):
+        raise RuntimeError("OpenRouter returned an unexpected transcription response.")
+
+    text_value = response_data.get("text")
+    if not isinstance(text_value, str):
+        raise RuntimeError("OpenRouter returned a transcription response without text.")
+
+    duration_value = response_data.get("duration")
+    duration: float | None = None
+    if duration_value is not None:
+        try:
+            duration = float(duration_value)
+        except (TypeError, ValueError):
+            raise RuntimeError("OpenRouter returned an invalid transcription duration.") from None
+        if not math.isfinite(duration) or duration < 0:
+            raise RuntimeError("OpenRouter returned an invalid transcription duration.")
+
+    segments: list[Segment] = []
+    raw_segments = response_data.get("segments")
+    if raw_segments is not None:
+        if not isinstance(raw_segments, list):
+            raise RuntimeError("OpenRouter returned malformed transcription segments.")
+        for raw_segment in raw_segments:
+            if not isinstance(raw_segment, Mapping):
+                raise RuntimeError("OpenRouter returned malformed transcription segments.")
+            segment_map = cast(Mapping[str, Any], raw_segment)
+            segment_text = segment_map.get("text")
+            if not isinstance(segment_text, str):
+                raise RuntimeError("OpenRouter returned malformed transcription segments.")
+            start_value = segment_map.get("start")
+            end_value = segment_map.get("end")
+            if (
+                isinstance(start_value, bool)
+                or not isinstance(start_value, (int, float, str))
+                or isinstance(end_value, bool)
+                or not isinstance(end_value, (int, float, str))
+            ):
+                raise RuntimeError("OpenRouter returned malformed transcription segments.")
+            try:
+                start = float(start_value)
+                end = float(end_value)
+            except (TypeError, ValueError):
+                raise RuntimeError("OpenRouter returned malformed transcription segments.") from None
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end < start:
+                raise RuntimeError("OpenRouter returned malformed transcription segments.")
+            if segment_text.strip():
+                segments.append(Segment(start=start, end=end, text=segment_text.strip()))
+
+    warnings = ["Audio was sent to OpenRouter for explicit cloud transcription."]
+    if not segments and text_value.strip():
+        segments.append(
+            Segment(
+                start=0.0,
+                end=duration or 0.0,
+                text=text_value.strip(),
+            )
+        )
+        warnings.append("OpenRouter response did not include segments; wrote a single transcript segment.")
+
+    detected_language = response_data.get("language")
+    if not isinstance(detected_language, str) or not detected_language.strip():
+        detected_language = None
+    language = detected_language or options.language
+    return BackendResult(
+        segments=segments,
+        model_name=model_name,
+        language=language,
+        device_used="remote",
+        compute_type_used="api",
+        duration_seconds=duration,
+        detected_language=detected_language,
+        warnings=warnings,
+    )
+
+
+def create_transcription_backend(
+    options: TranscriptionOptions,
+    logger: logging.Logger,
+    transport: Callable[..., Any] | None = None,
+) -> TranscriptionBackend:
+    """Create the selected backend while keeping unsupported choices explicit."""
+    if options.backend == "local_whisper":
+        return LocalWhisperBackend(options, logger)
+    if options.backend == OPENROUTER_TRANSCRIBE_BACKEND:
+        return OpenRouterTranscriptionBackend(options, logger, transport=transport)
+    return FutureBackendPlaceholder(options.backend)
+
+
 @dataclass
 class UnsupportedFile:
     source_path: Path
@@ -388,19 +715,6 @@ def transcribe_files(
 
     backend: TranscriptionBackend | None = None
     model_status = "Dry-run: model not loaded." if dry_run else "Waiting to load model."
-
-    if options.backend != "local_whisper" and not dry_run:
-        message = "This backend is reserved for future implementation."
-        logger.error("%s Selected backend: %s", message, options.backend)
-        emit(
-            progress_callback,
-            message,
-            status_rows,
-            RunMetrics(total_elapsed_time=time.monotonic() - run_started),
-            model_status=message,
-            log_tail=log_buffer.text(),
-        )
-        raise NotImplementedError(message)
 
     total_items = len(plans) + len(unsupported_files)
     completed_items = len(unsupported_files)
@@ -547,8 +861,12 @@ def transcribe_files(
                 warning=join_warnings(warnings),
             )
             if backend is None:
-                backend = LocalWhisperBackend(options, logger)
-                model_status = "Loading model..."
+                backend = create_transcription_backend(options, logger)
+                model_status = (
+                    "Loading model..."
+                    if options.backend == "local_whisper"
+                    else "Connecting to transcription provider..."
+                )
                 emit(
                     progress_callback,
                     model_status,
@@ -560,14 +878,18 @@ def transcribe_files(
                     progress=(completed_items + index - 1) / total_items,
                 )
                 backend.load_model_or_client()
-                model_status = (
-                    f"Loaded {options.model_name} on {backend.device_used} "
-                    f"({backend.compute_type_used})."
-                )
-                if options.device == "auto" and backend.device_used == "cpu":
+                device_used = getattr(backend, "device_used", "")
+                compute_type_used = getattr(backend, "compute_type_used", "")
+                if options.backend == "local_whisper":
+                    model_status = f"Loaded {options.model_name} on {device_used} ({compute_type_used})."
+                elif options.backend == OPENROUTER_TRANSCRIBE_BACKEND:
+                    model_status = f"Connected to OpenRouter for {options.model_name}."
+                else:
+                    model_status = f"Loaded {options.model_name}."
+                if options.device == "auto" and device_used == "cpu":
                     warnings.append("CUDA unavailable; using CPU.")
-                if options.compute_type == "auto" and backend.compute_type_used != "float16":
-                    warnings.append(f"Using compute type {backend.compute_type_used}.")
+                if options.compute_type == "auto" and compute_type_used != "float16" and options.backend == "local_whisper":
+                    warnings.append(f"Using compute type {compute_type_used}.")
                 emit(
                     progress_callback,
                     f"Transcribing {source_path.name}",
@@ -576,8 +898,8 @@ def transcribe_files(
                         current_file_duration=metadata.duration_seconds,
                         total_processed_duration=total_processed_duration,
                         total_elapsed_time=time.monotonic() - run_started,
-                        device_used=backend.device_used,
-                        compute_type_used=backend.compute_type_used,
+                        device_used=device_used,
+                        compute_type_used=compute_type_used,
                     ),
                     model_status=model_status,
                     current_file=source_path.name,
@@ -585,7 +907,6 @@ def transcribe_files(
                     progress=(completed_items + index - 1) / total_items,
                 )
 
-            assert isinstance(backend, LocalWhisperBackend)
             temp_audio = prepare_working_audio(source_path, output_paths["temp"], ffmpeg_path, normalize_audio, logger)
             result = backend.transcribe_file(temp_audio or source_path, options)
             warnings.extend(result.warnings)

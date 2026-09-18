@@ -4,7 +4,38 @@
 
 ✅ **Buildable and packageable** - Core implementation is present, frontend/Electron builds pass, backend tests pass, and Linux packages can be produced.
 
-Current backend dependency setup has been updated for Python 3.14. The project venv at `desktop/backend/.venv` resolves `ctranslate2`, `faster_whisper`, and FastAPI dependencies. If your IDE still shows unresolved imports, reload the Python language server and select `desktop/backend/.venv/bin/python`.
+Current backend dependency setup supports Python 3.10+. On Apple Silicon, the project venv at `desktop/backend/.venv` resolves native `ctranslate2`, `faster_whisper`, and FastAPI wheels. If your IDE still shows unresolved imports, reload the Python language server and select `desktop/backend/.venv/bin/python`.
+
+## macOS sandbox setup
+
+The older `lulakien/mediscribe` app can be run on macOS in development mode.
+This checkout uses CPU inference and stores its configuration and model cache
+under `~/Library/Application Support/MediScribe Local Sandbox`, so it does not
+share runtime state with another MediScribe installation.
+
+```bash
+# From the repository root
+brew install ffmpeg
+python3 -m venv desktop/backend/.venv
+desktop/backend/.venv/bin/python -m pip install -r desktop/backend/requirements.txt
+
+cd desktop
+npm ci
+npm run build:all
+```
+
+Start the renderer and Electron in separate terminals:
+
+```bash
+# Terminal 1
+cd desktop && npm run dev:frontend
+
+# Terminal 2
+cd desktop && npm start
+```
+
+Electron starts the backend from the project venv. You do not need to start a
+third backend terminal for this flow.
 
 ## What's Working
 

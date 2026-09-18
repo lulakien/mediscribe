@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderOpen, ChevronDown, ChevronUp, Check, AlertCircle, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,18 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSettings, useUpdateSettings, useModels } from "@/api/hooks";
 import { cn } from "@/lib/utils";
-import type { Config, ThemeOption } from "@/types";
+import type { ApiGatewaySettings, Config, ThemeOption } from "@/types";
+
+const OPENROUTER_DEFAULT_MODEL = "microsoft/mai-transcribe-2" as const;
+const OPENROUTER_DEFAULT_KEY_ENV = "OPENROUTER_API_KEY";
+const DEFAULT_GATEWAY: ApiGatewaySettings = {
+  enabled: false,
+  provider: null,
+  endpoint_url: null,
+  api_key_env_var: null,
+  model_name: null,
+  timeout_seconds: 60,
+};
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings();
@@ -25,6 +36,8 @@ export default function Settings() {
 
   const [savedStates, setSavedStates] = useState<Record<string, boolean>>({});
   const [backendCollapsed, setBackendCollapsed] = useState(true);
+  const [openRouterModel, setOpenRouterModel] = useState<string>(OPENROUTER_DEFAULT_MODEL);
+  const [openRouterKeyEnv, setOpenRouterKeyEnv] = useState(OPENROUTER_DEFAULT_KEY_ENV);
 
   // Show "Saved ✓" feedback for 2 seconds after save
   const showSavedFeedback = (key: string) => {
@@ -47,6 +60,28 @@ export default function Settings() {
     } catch (error) {
       console.error("Failed to save setting:", error);
     }
+  };
+
+  useEffect(() => {
+    const gateway = settings?.apiGateway;
+    if (!gateway) return;
+    setOpenRouterModel(gateway.model_name || OPENROUTER_DEFAULT_MODEL);
+    setOpenRouterKeyEnv(gateway.api_key_env_var || OPENROUTER_DEFAULT_KEY_ENV);
+  }, [settings?.apiGateway?.api_key_env_var, settings?.apiGateway?.model_name]);
+
+  const handleOpenRouterChange = async (updates: Partial<ApiGatewaySettings>) => {
+    if (!settings) return;
+    const current = { ...DEFAULT_GATEWAY, ...(settings.apiGateway || {}) };
+    const next: ApiGatewaySettings = {
+      ...current,
+      ...updates,
+      provider: updates.enabled === false ? current.provider : "openrouter",
+      endpoint_url: null,
+      model_name: updates.model_name || current.model_name || OPENROUTER_DEFAULT_MODEL,
+      api_key_env_var: updates.api_key_env_var || current.api_key_env_var || OPENROUTER_DEFAULT_KEY_ENV,
+      timeout_seconds: current.timeout_seconds || 60,
+    };
+    await handleSettingChange("apiGateway", next);
   };
 
   // Handler for folder picker using Electron API
@@ -389,34 +424,71 @@ export default function Settings() {
         </Card>
       </Collapsible>
 
-      {/* 5. Future Backends Placeholder Card */}
-      <Card className="opacity-50">
+      {/* 5. Optional Cloud Backend Card */}
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Transcription Backends
-            <span className="text-small font-normal text-text-faint">(Coming Later)</span>
+            Cloud transcription
+            <span className="text-small font-normal text-text-faint">(Optional)</span>
           </CardTitle>
           <CardDescription>
-            Cloud transcription services (optional and opt-in)
+            Use Microsoft MAI-Transcribe through OpenRouter when you explicitly enable it
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-body text-text-muted">
-            MediScribe currently transcribes only on this device. Cloud backends (OpenAI, Google,
-            Deepgram, Azure, custom gateway) may be added later and will always be opt-in.
-          </p>
-          <Select disabled>
-            <SelectTrigger>
-              <SelectValue placeholder="Local Whisper (active)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="local">Local Whisper</SelectItem>
-              <SelectItem value="openai" disabled>OpenAI (coming later)</SelectItem>
-              <SelectItem value="google" disabled>Google Speech (coming later)</SelectItem>
-              <SelectItem value="deepgram" disabled>Deepgram (coming later)</SelectItem>
-              <SelectItem value="azure" disabled>Azure (coming later)</SelectItem>
-            </SelectContent>
-          </Select>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1 flex-1">
+              <Label htmlFor="openrouter-enabled">Enable OpenRouter transcription</Label>
+              <p className="text-small text-text-muted font-normal normal-case">
+                Local Whisper stays the default while this is off.
+              </p>
+            </div>
+            <Switch
+              id="openrouter-enabled"
+              checked={settings.apiGateway?.enabled === true && settings.apiGateway.provider === "openrouter"}
+              onCheckedChange={(enabled) => void handleOpenRouterChange({ enabled })}
+            />
+          </div>
+
+          <div className={cn("space-y-4", !(settings.apiGateway?.enabled && settings.apiGateway.provider === "openrouter") && "opacity-60")}>
+            <div className="space-y-2">
+              <Label htmlFor="openrouter-model">Microsoft transcription model</Label>
+              <Select
+                value={openRouterModel}
+                onValueChange={(value) => {
+                  setOpenRouterModel(value);
+                  void handleOpenRouterChange({ model_name: value as ApiGatewaySettings["model_name"] });
+                }}
+              >
+                <SelectTrigger id="openrouter-model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="microsoft/mai-transcribe-2">MAI-Transcribe 2 (recommended)</SelectItem>
+                  <SelectItem value="microsoft/mai-transcribe-1.5">MAI-Transcribe 1.5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="openrouter-key-env">API key environment variable</Label>
+              <Input
+                id="openrouter-key-env"
+                value={openRouterKeyEnv}
+                onChange={(event) => setOpenRouterKeyEnv(event.target.value)}
+                onBlur={() => void handleOpenRouterChange({ api_key_env_var: openRouterKeyEnv.trim() || OPENROUTER_DEFAULT_KEY_ENV })}
+                className="font-mono text-small"
+                spellCheck={false}
+              />
+              <p className="text-small text-text-muted">
+                Only this variable name is saved. Put the real key in that variable before launching the app; the key is never stored by MediScribe.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-button border border-amber-200 bg-amber-50 px-4 py-3 text-small text-text-muted">
+            OpenRouter mode sends prepared audio to the cloud and does not fall back to local transcription if the request fails.
+          </div>
         </CardContent>
       </Card>
 
@@ -430,12 +502,10 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-body text-text">
-            <strong>Local mode is the default and only active mode.</strong> Audio files never leave
-            this computer. Network access is used only when you download a model from Hugging Face.
+            <strong>Local mode is the default.</strong> Audio stays on this computer unless you explicitly enable OpenRouter cloud transcription.
           </p>
           <p className="text-body text-text-muted">
-            All transcription happens on your device using your GPU. No telemetry, no analytics,
-            no cloud processing unless you explicitly opt into a future cloud backend.
+            In cloud mode, the prepared audio is sent to OpenRouter for Microsoft transcription. The API key is read from the configured environment variable and is not persisted in settings, logs, or transcript artifacts.
           </p>
           <Button
             variant="ghost"

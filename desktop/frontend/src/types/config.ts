@@ -26,7 +26,7 @@ export interface Config {
   // Last custom advanced settings (preserved when switching from preset to custom)
   customAdvanced: CustomAdvancedSettings;
 
-  // Future API gateway settings
+  // Optional API gateway settings
   apiGateway: ApiGatewaySettings;
 
   // Recent output folders for Results page
@@ -47,10 +47,10 @@ export interface CustomAdvancedSettings {
 
 export interface ApiGatewaySettings {
   enabled: boolean;
-  provider: string | null;
+  provider: 'openrouter' | null;
   endpoint_url: string | null;
   api_key_env_var: string | null;
-  model_name: string | null;
+  model_name: 'microsoft/mai-transcribe-1.5' | 'microsoft/mai-transcribe-2' | null;
   timeout_seconds: number;
 }
 

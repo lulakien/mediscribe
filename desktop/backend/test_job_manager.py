@@ -19,7 +19,14 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from job_manager import Job, JobManager, CancellationException, get_job_manager, normalize_transcription_options
+from job_manager import (
+    Job,
+    JobManager,
+    CancellationException,
+    get_job_manager,
+    normalize_transcription_options,
+    resolve_job_options,
+)
 
 
 def test_job_creation():
@@ -80,6 +87,32 @@ def test_normalize_transcription_options_maps_model_id_and_drops_unknown_keys():
         "model_name": "large-v3",
         "device": "cuda",
     }
+
+
+def test_resolve_job_options_uses_explicit_openrouter_gateway_without_key_value():
+    options = resolve_job_options(
+        {"model_name": "large-v3"},
+        config={
+            "apiGateway": {
+                "enabled": True,
+                "provider": "openrouter",
+                "model_name": "microsoft/mai-transcribe-2",
+                "api_key_env_var": "OPENROUTER_API_KEY",
+            }
+        },
+        environ={},
+    )
+
+    assert options.backend == "openrouter_transcribe"
+    assert options.model_name == "microsoft/mai-transcribe-2"
+    assert options.api_key_env_var == "OPENROUTER_API_KEY"
+
+
+def test_resolve_job_options_defaults_to_local_without_gateway():
+    options = resolve_job_options({"model_name": "large-v3"}, config={}, environ={})
+
+    assert options.backend == "local_whisper"
+    assert options.model_name == "large-v3"
 
 
 def test_get_all_jobs():

@@ -21,12 +21,14 @@ from pathlib import Path
 from queue import Queue
 from typing import Any, Optional
 
+from config_manager import get_config_manager
 from path_setup import add_shared_to_path
 
 add_shared_to_path()
 from transcribe_core import (
     ProgressEvent,
     TranscriptionOptions,
+    resolve_transcription_options,
     transcribe_files,
 )
 
@@ -44,6 +46,21 @@ def normalize_transcription_options(options: dict[str, Any]) -> dict[str, Any]:
         for key, value in normalized.items()
         if key in TRANSCRIPTION_OPTION_FIELDS
     }
+
+
+def resolve_job_options(
+    options: dict[str, Any],
+    config: dict[str, Any] | None = None,
+    environ: dict[str, str] | None = None,
+) -> TranscriptionOptions:
+    """Build safe core options using explicit local config/environment choices."""
+    normalized = normalize_transcription_options(options)
+    resolved_config = get_config_manager().get() if config is None else config
+    return resolve_transcription_options(
+        TranscriptionOptions(**normalized),
+        config=resolved_config,
+        environ=environ,
+    )
 
 
 def utc_now_iso() -> str:
@@ -333,8 +350,8 @@ class JobManager:
         """
         # Convert dict options back to TranscriptionOptions
         try:
-            job.options = normalize_transcription_options(job.options)
-            options = TranscriptionOptions(**job.options)
+            options = resolve_job_options(job.options)
+            job.options = asdict(options)
         except Exception as e:
             job.state = "failed"
             job.error_message = f"Invalid options: {e}"

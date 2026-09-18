@@ -17,8 +17,7 @@
     "start": "cd electron && npm start",
     "package": "npm run build:all && cd electron && npm run package",
     "package:linux": "npm run build:all && cd electron && npm run package:linux",
-    "clean": "rm -rf frontend/dist electron/dist electron/dist-packaged",
-    "postinstall": "cd frontend && npm install && cd ../electron && npm install"
+    "clean": "rm -rf frontend/dist electron/dist electron/dist-packaged"
   },
   "repository": {
     "type": "git",

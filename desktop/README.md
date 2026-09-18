@@ -4,15 +4,16 @@ Local-first transcription studio for Turkish medical lectures.
 
 ## Overview
 
-MediScribe Local transcribes medical lectures on your machine using Whisper AI. Everything runs locally with GPU acceleration — private, secure, and study-ready outputs.
+MediScribe Local transcribes medical lectures on your machine using Whisper AI by default. It also has an explicit optional OpenRouter path for Microsoft transcription when cloud processing is enabled — otherwise local, private, study-ready outputs remain the norm.
 
 ## Features
 
-- **Local-first**: Audio never leaves your machine
+- **Local-first**: Audio stays on your machine by default
 - **GPU-accelerated**: Uses CUDA for fast transcription (CPU fallback available)
 - **Study-ready outputs**: TXT, timestamped Markdown, segments JSON
 - **Model management**: Download and test Whisper models with one click
 - **Batch processing**: Process multiple audio files with smart presets
+- **Optional OpenRouter**: Explicitly send audio to Microsoft MAI-Transcribe through OpenRouter
 
 ---
 
@@ -20,11 +21,49 @@ MediScribe Local transcribes medical lectures on your machine using Whisper AI. 
 
 ### Prerequisites
 
-- **Operating System**: Ubuntu 24.04+ or compatible Linux distribution
+- **Operating System**: Ubuntu 24.04+ or compatible Linux distribution for packaged builds; macOS for development
 - **Node.js**: 18+ (for development and building)
-- **Python**: 3.10 or 3.11 (required for transcription backend)
-- **ffmpeg**: System package for audio processing
+- **Python**: 3.10+ (required for transcription backend)
+- **ffmpeg**: System package for audio processing (`brew install ffmpeg` on macOS)
 - **CUDA Drivers**: NVIDIA GPU driver 525+ (optional, for GPU acceleration)
+
+### macOS / Apple Silicon development
+
+The Linux AppImage and `.deb` targets are not macOS packages. On macOS, use
+the Electron development app; it runs the local Python backend with CPU
+inference and keeps its runtime state separate from other MediScribe versions.
+
+```bash
+# From the repository root
+brew install ffmpeg
+python3 -m venv desktop/backend/.venv
+desktop/backend/.venv/bin/python -m pip install -r desktop/backend/requirements.txt
+
+cd desktop
+npm ci
+npm run build:all
+```
+
+Then use two terminals:
+
+```bash
+# Terminal 1: Vite renderer
+cd desktop
+npm run dev:frontend
+
+# Terminal 2: Electron shell (starts the backend automatically)
+cd desktop
+npm start
+```
+
+The sandbox backend configuration and Hugging Face cache live below
+`~/Library/Application Support/MediScribe Local Sandbox`. CUDA is reported as
+unavailable on macOS, so choose the CPU-compatible defaults shown by the app.
+
+For the optional cloud provider, see
+[`docs/OPENROUTER_TRANSCRIPTION.md`](../docs/OPENROUTER_TRANSCRIPTION.md). The
+API key is supplied through the launch environment, never through the saved
+MediScribe configuration.
 
 ### Hardware Recommendations
 
@@ -430,7 +469,7 @@ Per DESIGN.md §16, these are known constraints in the current version:
 
 ### User Data
 
-- **Config file**: `~/.config/mediscribe/config.json`
+- **Config file**: `~/.config/mediscribe/config.json` for direct backend runs; Electron sandbox launches use `~/Library/Application Support/MediScribe Local Sandbox/config.json`
   - Default output folder
   - Default model and preset
   - UI preferences (theme, welcome screen)
@@ -439,7 +478,7 @@ Per DESIGN.md §16, these are known constraints in the current version:
 - **Backend logs**: Console output (printed to terminal in dev mode)
   - In production: accessible via journalctl (systemd) or console
 
-- **Model cache**: `~/.cache/huggingface/hub/`
+- **Model cache**: `~/.cache/huggingface/hub/` for direct runs; Electron sandbox launches use `~/Library/Application Support/MediScribe Local Sandbox/huggingface/`
   - Managed by Hugging Face Hub library
   - Shared with other applications using HF models
   - Models: `Systran/faster-whisper-large-v3`, etc.
@@ -658,16 +697,16 @@ The app automatically retries with lower precision (`float16 → int8_float16`).
 
 ## Privacy
 
-MediScribe Local is **private by design** (per DESIGN.md §12):
+MediScribe Local is **local-first by design** (per DESIGN.md §12):
 
-- ✓ All transcription happens on your machine
-- ✓ Audio files are never uploaded anywhere
-- ✓ Network used **only** for downloading Whisper models from Hugging Face
+- ✓ Local mode keeps transcription on your machine
+- ✓ Audio is uploaded only when OpenRouter cloud mode is explicitly enabled
+- ✓ The OpenRouter key is read from an environment variable and is never persisted
 - ✓ No telemetry, no analytics, no crash reporting
 - ✓ No accounts, no API keys required for local models
 - ✓ Backend binds to `127.0.0.1` only (not accessible from network)
 
-The status footer shows: **● Local mode · Backend: running · CUDA: ready**
+The status footer shows the active mode; local mode remains the default.
 
 ---
 

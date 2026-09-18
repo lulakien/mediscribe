@@ -57,6 +57,7 @@ export class PythonService {
         MEDISCRIBE_PORT: '0', // OS-assigned ephemeral port
         MEDISCRIBE_TOKEN: this.token,
         MEDISCRIBE_DATA_DIR: this.dataDir,
+        HF_HOME: path.join(this.dataDir, 'huggingface'),
       };
 
       this.process = spawn(pythonExecutable, [backendPath], {
@@ -326,7 +327,7 @@ export class PythonService {
       return bundledBackend;
     }
 
-    return path.join(__dirname, '../../../backend/main.py');
+    return path.join(__dirname, '../../backend/main.py');
   }
 
   /**
@@ -345,7 +346,7 @@ export class PythonService {
       return resourceVenvPython;
     }
 
-    const sourceBackendVenv = path.join(__dirname, '../../../backend/.venv/bin/python');
+    const sourceBackendVenv = path.join(__dirname, '../../backend/.venv/bin/python');
     if (fs.existsSync(sourceBackendVenv)) {
       return sourceBackendVenv;
     }

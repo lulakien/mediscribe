@@ -7,6 +7,7 @@ Schema matches DESIGN.md §10.6 requirements.
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, asdict, field
@@ -18,6 +19,59 @@ fizyoloji, patoloji, farmakoloji, biyokimya, histoloji, embriyoloji \
 ve klinik ifadeleri mümkün olduğunca doğru yaz. Latince anatomik \
 terimleri koru. Kısaltmaları doğru aktar. Konuşma Türkçedir; \
 gereksiz İngilizce çeviri yapma."""
+
+_OPENROUTER_TRANSCRIPTION_URL = "https://openrouter.ai/api/v1/audio/transcriptions"
+_OPENROUTER_MODELS = {
+    "microsoft/mai-transcribe-1.5",
+    "microsoft/mai-transcribe-2",
+}
+_API_GATEWAY_FIELDS = {
+    "enabled",
+    "provider",
+    "endpoint_url",
+    "api_key_env_var",
+    "model_name",
+    "timeout_seconds",
+}
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_api_gateway(value: Any) -> dict[str, Any]:
+    """Validate gateway metadata without accepting a credential value."""
+    if not isinstance(value, dict):
+        raise ValueError("apiGateway must be an object")
+    if set(value) - _API_GATEWAY_FIELDS:
+        raise ValueError("apiGateway contains unsupported fields")
+
+    enabled = value.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("apiGateway.enabled must be a boolean")
+
+    provider = value.get("provider")
+    if provider not in (None, "openrouter"):
+        raise ValueError("apiGateway provider is unsupported")
+
+    endpoint_url = value.get("endpoint_url")
+    if endpoint_url not in (None, _OPENROUTER_TRANSCRIPTION_URL):
+        raise ValueError("apiGateway endpoint is not the canonical OpenRouter endpoint")
+
+    key_env_var = value.get("api_key_env_var")
+    if key_env_var is not None:
+        if not isinstance(key_env_var, str) or not _ENV_VAR_NAME_RE.fullmatch(key_env_var):
+            raise ValueError("apiGateway API-key environment-variable name is invalid")
+
+    model_name = value.get("model_name")
+    if model_name is not None and model_name not in _OPENROUTER_MODELS:
+        raise ValueError("apiGateway model is unsupported")
+
+    timeout_seconds = value.get("timeout_seconds")
+    if timeout_seconds is not None:
+        if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+            raise ValueError("apiGateway timeout must be numeric")
+        if timeout_seconds <= 0 or timeout_seconds > 600:
+            raise ValueError("apiGateway timeout is outside the allowed range")
+
+    return dict(value)
 
 
 @dataclass
@@ -59,14 +113,14 @@ class ConfigSchema:
         "temperature": 0
     })
 
-    # Future API gateway settings (placeholder, per DESIGN.md §13)
+    # Optional API gateway settings. The core caps requests at 60 seconds.
     apiGateway: dict = field(default_factory=lambda: {
         "enabled": False,
         "provider": None,
         "endpoint_url": None,
         "api_key_env_var": None,
         "model_name": None,
-        "timeout_seconds": 600
+        "timeout_seconds": 60
     })
 
     # Recent output folders for Results page (Decision 3, §16.1)
@@ -92,14 +146,20 @@ class ConfigManager:
         if config_path:
             self.config_path = Path(config_path)
         else:
-            # XDG_CONFIG_HOME or fallback to ~/.config
-            config_home = os.environ.get('XDG_CONFIG_HOME')
-            if not config_home:
-                config_home = Path.home() / '.config'
+            # Electron-provided data roots must stay isolated from other
+            # MediScribe installations on the same machine.
+            data_dir = os.environ.get('MEDISCRIBE_DATA_DIR')
+            if data_dir:
+                self.config_path = Path(data_dir).expanduser() / 'config.json'
             else:
-                config_home = Path(config_home)
+                # XDG_CONFIG_HOME or fallback to ~/.config
+                config_home = os.environ.get('XDG_CONFIG_HOME')
+                if not config_home:
+                    config_home = Path.home() / '.config'
+                else:
+                    config_home = Path(config_home)
 
-            self.config_path = config_home / 'mediscribe' / 'config.json'
+                self.config_path = config_home / 'mediscribe' / 'config.json'
 
         self._config: Optional[ConfigSchema] = None
         self._ensure_config_exists()
@@ -128,12 +188,14 @@ class ConfigManager:
             # Handle missing fields gracefully by merging with defaults
             default = asdict(ConfigSchema())
             merged = {**default, **data}
+            gateway = _validate_api_gateway(merged.get("apiGateway", default["apiGateway"]))
+            merged["apiGateway"] = {**default["apiGateway"], **gateway}
 
             return ConfigSchema(**merged)
 
-        except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
+        except (json.JSONDecodeError, FileNotFoundError, KeyError, TypeError, ValueError):
             # Corrupted or missing config: return defaults and rewrite
-            print(f"Config read error ({e}), using defaults")
+            print("Config read error; using defaults")
             default_config = ConfigSchema()
             self._write_config(default_config)
             return default_config
@@ -189,6 +251,12 @@ class ConfigManager:
                 "Fast Batch", "Low VRAM Safe", "Custom"
             ]:
                 raise ValueError(f"Invalid preset: {value}")
+
+            if key == 'apiGateway':
+                gateway = _validate_api_gateway(value)
+                current_gateway = current_dict.get('apiGateway') or asdict(ConfigSchema())['apiGateway']
+                current_dict[key] = {**current_gateway, **gateway}
+                continue
 
             # Apply update
             current_dict[key] = value

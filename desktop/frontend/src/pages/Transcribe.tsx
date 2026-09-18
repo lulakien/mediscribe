@@ -379,11 +379,14 @@ export default function Transcribe() {
   };
 
   // Run actions
+  const cloudEnabled = settings?.apiGateway?.enabled === true && settings.apiGateway.provider === 'openrouter';
+  const cloudModel = settings?.apiGateway?.model_name || 'microsoft/mai-transcribe-2';
+
   const buildOptions = (): TranscriptionOptions => ({
-    model_name: model,
-    backend: 'local_whisper',
-    device,
-    compute_type: computeType,
+    model_name: cloudEnabled ? cloudModel : model,
+    backend: cloudEnabled ? 'openrouter_transcribe' : 'local_whisper',
+    device: cloudEnabled ? 'remote' : device,
+    compute_type: cloudEnabled ? 'api' : computeType,
     language: settings?.language || 'tr',
     initial_prompt: settings?.initialPrompt || '',
     beam_size: Number.parseInt(beamSize, 10),
@@ -461,7 +464,7 @@ export default function Transcribe() {
   const totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
   const selectedModel = models.find((item) => item.id === model);
   const modelInstalled = Boolean(selectedModel?.loaded);
-  const canStart = selectedFiles.some((file) => file.status === 'supported') && modelInstalled && !createJob.isPending;
+  const canStart = selectedFiles.some((file) => file.status === 'supported') && (cloudEnabled || modelInstalled) && !createJob.isPending;
 
   const formatDuration = (seconds: number) => {
     const wholeSeconds = Math.max(0, Math.floor(seconds || 0));
@@ -621,16 +624,29 @@ export default function Transcribe() {
               {/* Resolved settings summary */}
               <div className="flex items-start gap-2 px-4 py-3 bg-surface-2 rounded-button">
                 <div className="text-mono-small text-text-muted flex-1">
-                  {model}{' '}
-                  {modelInstalled ? (
-                    <span className="text-success">✓ installed</span>
+                  {cloudEnabled ? (
+                    <>
+                      {cloudModel} <span className="text-primary">· OpenRouter cloud</span>
+                    </>
                   ) : (
-                    <span className="text-warning">⚠ not installed</span>
+                    <>
+                      {model}{' '}
+                      {modelInstalled ? (
+                        <span className="text-success">✓ installed</span>
+                      ) : (
+                        <span className="text-warning">⚠ not installed</span>
+                      )}{' '}
+                      · {device} · {computeType}
+                    </>
                   )}{' '}
-                  · {device} · {computeType} · beam {beamSize} · VAD {vad ? 'on' : 'off'} ·
-                  normalization {normalization ? 'on' : 'off'}
+                  · beam {beamSize} · VAD {vad ? 'on' : 'off'} · normalization {normalization ? 'on' : 'off'}
                 </div>
               </div>
+              {cloudEnabled && (
+                <div className="rounded-button border border-amber-200 bg-amber-50 px-4 py-3 text-small text-text-muted">
+                  Audio will be sent to OpenRouter using {settings?.apiGateway?.api_key_env_var || 'OPENROUTER_API_KEY'}. The real key must be present in the environment before launching the app.
+                </div>
+              )}
             </div>
 
             {/* Output folder */}

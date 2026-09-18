@@ -10,6 +10,11 @@ let backendToken: string = '';
 let backendUrl: string = '';
 let isQuitting = false;
 
+// Set the sandbox path before Electron initializes renderer/cache locations so
+// this checkout cannot share user data with another MediScribe installation.
+const sandboxUserDataDir = path.join(app.getPath('appData'), 'MediScribe Local Sandbox');
+app.setPath('userData', sandboxUserDataDir);
+
 // Security: Generate session token for backend auth
 function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -205,8 +210,8 @@ app.on('ready', async () => {
   // Generate session token
   backendToken = generateToken();
 
-  // Get user data directory for config
-  const userDataDir = app.getPath('userData');
+  // Keep the backend data root aligned with Electron's isolated user data.
+  const userDataDir = sandboxUserDataDir;
 
   // Start Python backend
   pythonService = new PythonService({

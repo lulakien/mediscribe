@@ -36,8 +36,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
-from path_setup import add_shared_to_path
+from path_setup import add_shared_to_path, configure_runtime_environment
 
+configure_runtime_environment()
 add_shared_to_path()
 
 # Import managers
