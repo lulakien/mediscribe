@@ -209,7 +209,10 @@
   cd ..
   python3 -m pytest -q tests/test_headless_runner.py
   python3 scripts/mediscribe_doctor.py --profile cloud --dry-run --input tests/fixtures/headless-input --output .tmp/headless-doctor
-  python3 scripts/mediscribe_headless.py --profile cloud --input tests/fixtures/headless-input --output .tmp/headless-run --dry-run --json-summary
+  verify_dir="$(mktemp -d)"
+  touch "$verify_dir/sample.m4a"
+  python3 scripts/mediscribe_headless.py --profile cloud --input "$verify_dir" --output .tmp/headless-run --dry-run --json-summary
+  mv "$verify_dir" "${TMPDIR:-/tmp}/mediscribe-headless-plan-verify-$$"
   git diff --check
   ```
 

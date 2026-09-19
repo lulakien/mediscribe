@@ -30,6 +30,23 @@ transcription if the provider or network fails.
 The cloud profile does not download Whisper models and does not require
 Electron, Node.js, macOS Keychain, or Apple MLX.
 
+Install the system audio tools before bootstrapping if they are not already
+available. On Debian/Ubuntu-based Work Cloud images, use:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes ffmpeg
+```
+
+On macOS with Homebrew, use `brew install ffmpeg`. On Windows, install a
+trusted FFmpeg distribution and ensure both `ffmpeg` and `ffprobe` are on
+`PATH`. Confirm availability from the repository root with:
+
+```bash
+ffmpeg -version
+ffprobe -version
+```
+
 ## Bootstrap from a fresh checkout
 
 ```bash
