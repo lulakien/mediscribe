@@ -39,6 +39,20 @@ mediscribe/
 - ffmpeg (`sudo apt install ffmpeg` on Ubuntu, or `brew install ffmpeg` on macOS)
 - NVIDIA GPU with CUDA (optional, for acceleration)
 
+### Choose your execution mode
+
+Use the desktop app when you have a supported local computer and want the
+interactive Electron interface, local Whisper, or Apple MLX on Apple Silicon.
+For ChatGPT Work agents or ordinary terminals without the app, use the
+portable [Work Cloud and headless runbook](docs/WORK_CLOUD_RUNBOOK.md). The
+headless runner uses the same shared transcription engine and output contract,
+but does not require Electron, macOS Keychain, or a local Whisper model for
+Microsoft cloud transcription.
+
+The desktop path remains local-first. Cloud transcription is explicit and
+requires an environment-provided OpenRouter key; it never silently falls back
+to local transcription.
+
 ### macOS sandbox (development)
 
 The older `lulakien/mediscribe` checkout can run on macOS, including Apple

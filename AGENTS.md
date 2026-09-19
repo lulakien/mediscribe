@@ -17,7 +17,7 @@ This repository is the local-first MediScribe desktop app described in `DESIGN.m
 - Keep the renderer sandboxed. Business logic must go through FastAPI. Electron IPC should stay limited to native dialogs, shell operations, and backend connection info.
 - Manifests are the source of truth for completed history. Avoid introducing a parallel persistent result store unless the design is reopened.
 - Preserve the output contract from `shared/transcribe_core.py`: TXT, timestamped MD, segments JSON, manifest CSV/JSON, and run logs.
-- Non-local transcription backends are future placeholders. Do not implement cloud/API transcription unless explicitly asked.
+- Cloud/API transcription is supported only through the explicit OpenRouter Microsoft adapter. It remains opt-in, must read credentials from an environment or the desktop sandbox Keychain, and agent workflows should use the portable headless runner rather than inventing a second provider path.
 - Historical docs may mention earlier failures. Prefer fixing stale wording over changing code to match outdated reports.
 
 ## Python Environment

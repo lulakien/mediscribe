@@ -6,6 +6,25 @@
 
 Current backend dependency setup supports Python 3.10+. On Apple Silicon, the project venv at `desktop/backend/.venv` resolves native `ctranslate2`, `faster_whisper`, and FastAPI wheels. If your IDE still shows unresolved imports, reload the Python language server and select `desktop/backend/.venv/bin/python`.
 
+## Work Cloud or headless setup
+
+When an agent needs to run MediScribe without a desktop computer, use the
+portable [Work Cloud runbook](WORK_CLOUD_RUNBOOK.md). It installs a small
+Python environment, uses Microsoft transcription through the explicit
+OpenRouter profile, and writes the same manifest-backed artifacts as the
+desktop app:
+
+```bash
+python3 scripts/bootstrap_headless.py --profile cloud
+.venv-headless/bin/python scripts/mediscribe_doctor.py --profile cloud --input work/input --output work/output
+.venv-headless/bin/python scripts/mediscribe_headless.py --profile cloud --input work/input --output work/output
+```
+
+The headless path does not use Electron, macOS Keychain, or Apple MLX. Supply
+`OPENROUTER_API_KEY` through the approved environment-secret mechanism and
+ensure `ffmpeg`, `ffprobe`, shell access, and public-network access are
+available. For the interactive app, continue with the desktop setup below.
+
 ## macOS sandbox setup
 
 The older `lulakien/mediscribe` app can be run on macOS in development mode.
